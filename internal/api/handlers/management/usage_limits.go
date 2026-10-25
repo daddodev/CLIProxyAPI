@@ -67,17 +67,20 @@ type usageResets struct {
 }
 
 type usageAccount struct {
-	AuthIndex     string        `json:"auth_index"`
-	Label         string        `json:"label"`
-	Plan          string        `json:"plan"`
-	Disabled      bool          `json:"disabled"`
-	Status        string        `json:"status"`
-	CooldownUntil *time.Time    `json:"cooldown_until"`
-	Source        string        `json:"source"`
-	ObservedAt    *time.Time    `json:"observed_at"`
-	Error         string        `json:"error"`
-	Windows       []usageWindow `json:"windows"`
-	Resets        *usageResets  `json:"resets"`
+	Priority          int           `json:"priority"`
+	QuotaLimitPercent float64       `json:"quota_limit_percent"`
+	LimitReached      bool          `json:"limit_reached"`
+	AuthIndex         string        `json:"auth_index"`
+	Label             string        `json:"label"`
+	Plan              string        `json:"plan"`
+	Disabled          bool          `json:"disabled"`
+	Status            string        `json:"status"`
+	CooldownUntil     *time.Time    `json:"cooldown_until"`
+	Source            string        `json:"source"`
+	ObservedAt        *time.Time    `json:"observed_at"`
+	Error             string        `json:"error"`
+	Windows           []usageWindow `json:"windows"`
+	Resets            *usageResets  `json:"resets"`
 }
 
 type combinedWindow struct {
@@ -247,7 +250,7 @@ func (h *Handler) GetUsageLimits(c *gin.Context) {
 		}
 		providers = append(providers, entry)
 	}
-	c.JSON(http.StatusOK, gin.H{"checked_at": now.UTC(), "providers": providers})
+	c.JSON(http.StatusOK, gin.H{"checked_at": now.UTC(), "providers": providers, "routing_strategy": h.cfg.Routing.Strategy})
 }
 
 func usageProviderLabel(provider string) string {
@@ -269,8 +272,28 @@ func usageAccountLabel(auth *coreauth.Auth) string {
 	return auth.ID
 }
 
-func (h *Handler) usageAccountFor(ctx context.Context, auth *coreauth.Auth, now time.Time, force bool) usageAccount {
-	account := usageAccount{
+func (h *Handler) usageAccountFor(ctx context.Context, auth *coreauth.Auth, now time.Time, force bool) (account usageAccount) {
+	defer func() {
+		account.QuotaLimitPercent = coreauth.QuotaLimitPercent(auth)
+		account.Priority, _ = strconv.Atoi(auth.Attributes["priority"])
+		// Successful probes also feed the scheduler, so thresholds do not depend
+		// on whether the last business response carried quota headers.
+		if account.Source == "probe" && account.ObservedAt != nil {
+			headers := usageWindowHeaders(auth.Provider, account.Windows)
+			if h.authManager != nil {
+				h.authManager.ObserveQuotaHeaders(auth.ID, auth.RegistrationEpoch, headers, *account.ObservedAt)
+			}
+			auth = auth.Clone()
+			if !auth.Quota.ObservedAt.After(*account.ObservedAt) {
+				auth.Quota.ObserveResponseHeadersForProvider(auth.Provider, headers, *account.ObservedAt)
+			}
+		}
+		account.LimitReached, _ = coreauth.QuotaLimitReached(auth, now)
+		if account.LimitReached && account.Status == "ok" {
+			account.Status = "quota_limit"
+		}
+	}()
+	account = usageAccount{
 		AuthIndex: auth.Index,
 		Label:     usageAccountLabel(auth),
 		Disabled:  auth.Disabled,
@@ -947,4 +970,40 @@ func usageCallFailure(err error) (string, int, string, string) {
 		return "", http.StatusConflict, "signed_out", err.Error()
 	}
 	return "", http.StatusBadGateway, "unconfirmed", "The reset request did not complete. Retry to check whether it landed."
+}
+
+// usageWindowHeaders translates the two account-wide windows into the same
+// observation contract used by business responses. Model-specific windows are
+// intentionally excluded from the credential-wide gate.
+func usageWindowHeaders(provider string, windows []usageWindow) http.Header {
+	headers := make(http.Header)
+	for _, w := range windows {
+		if w.Kind != windowFiveHour && w.Kind != windowWeekly {
+			continue
+		}
+		prefix := ""
+		value := w.UsedPercent
+		usedSuffix, resetSuffix := "-Used-Percent", "-Reset-At"
+		switch provider {
+		case "claude":
+			prefix = "Anthropic-Ratelimit-Unified-5h"
+			if w.Kind == windowWeekly {
+				prefix = "Anthropic-Ratelimit-Unified-7d"
+			}
+			value /= 100
+			usedSuffix, resetSuffix = "-Utilization", "-Reset"
+		case "codex":
+			prefix = "X-Codex-Primary"
+			if w.Kind == windowWeekly {
+				prefix = "X-Codex-Secondary"
+			}
+		default:
+			continue
+		}
+		headers.Set(prefix+usedSuffix, strconv.FormatFloat(value, 'f', -1, 64))
+		if w.ResetsAt != nil {
+			headers.Set(prefix+resetSuffix, w.ResetsAt.Format(time.RFC3339Nano))
+		}
+	}
+	return headers
 }

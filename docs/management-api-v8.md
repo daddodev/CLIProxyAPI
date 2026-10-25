@@ -246,3 +246,35 @@ accepts legacy, new, or mixed layouts, normalizing v8 documents on save.
 
 Plugin OAuth uses the shared v8 login endpoint. Other plugin-defined HTTP
 extensions retain their declared `/v0/management` routes.
+
+## Account priority and quota ceilings
+
+The quota page (`/management.html#/quota`) uses existing v8 credential operations:
+
+- `PATCH /credentials/fields` with `{"name":"account.json","priority":10,"quota_limit_percent":80}` saves account routing settings in the auth file.
+- `PATCH /credentials/status` with `{"name":"account.json","disabled":true}` disables an account; `false` enables it.
+- `PUT /config/routing/strategy` with `"fill-first"` uses one eligible account at a time. `"round-robin"` distributes requests; `"weighted-round-robin"` preserves weighted distribution. Higher priority numbers are preferred in every mode; distribution occurs within the highest available tier. Existing session affinity remains active until the bound account becomes unavailable.
+
+`quota_limit_percent` accepts numbers from 0 through 100, or `null`. Zero, null,
+and an absent field use the provider's own limits. For Claude and Codex, a positive
+value excludes the account when either reported account-wide quota window reaches
+that percentage. The account becomes eligible after all blocking windows reset or
+new observations report usage below the ceiling. Model-specific quotas retain
+their existing routing behavior. Unsupported providers have no percentage ceiling.
+
+Enforcement uses the latest upstream response headers, WebSocket quota signals,
+or successful usage-dashboard probes. Unknown quota usage does not block an
+account. This is an observed utilization ceiling, not a reservation: concurrent
+requests and delayed upstream reporting can exceed it. If a blocking window has
+no reset time, a newer observation is needed to release it.
+
+`GET /observability/usage/limits` includes `routing_strategy` and each account's
+`priority`, `quota_limit_percent`, and `limit_reached`. A threshold-blocked account
+has status `quota_limit` when it has no other status condition. `/usage.html`
+displays these fields alongside enabled/disabled state and upstream quota windows.
+
+The management frontend source lives in the separate
+[management-center repository](https://github.com/router-for-me/Cli-Proxy-API-Management-Center).
+Build its updated source with `bun run build` and deploy `dist/index.html` as the
+server's `static/management.html` to use the quota-page controls. Keep automatic
+panel updates disabled while using an unreleased frontend build.

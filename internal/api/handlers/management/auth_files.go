@@ -775,6 +775,7 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 			}
 		}
 	}
+	entry[coreauth.QuotaLimitPercentKey] = coreauth.QuotaLimitPercent(auth)
 	if weight, ok := authWeightValue(auth); ok {
 		entry[coreauth.AttributeWeight] = weight
 	}

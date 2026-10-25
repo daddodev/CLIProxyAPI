@@ -827,6 +827,12 @@ func isAuthBlockedForModel(auth *Auth, model string, now time.Time) (bool, block
 	if auth.Disabled || auth.Status == StatusDisabled {
 		return true, blockReasonDisabled, time.Time{}
 	}
+	if reached, reset := QuotaLimitReached(auth, now); reached {
+		if reset.IsZero() {
+			return true, blockReasonOther, reset
+		}
+		return true, blockReasonCooldown, reset
+	}
 	if hasUnauthorizedAuthFailure(auth) {
 		return true, blockReasonOther, time.Time{}
 	}
@@ -974,6 +980,9 @@ func isAuthBlockedByQuotaOrAuthForModel(auth *Auth, model string, now time.Time)
 		return true
 	}
 	if auth.Disabled || auth.Status == StatusDisabled {
+		return true
+	}
+	if reached, _ := QuotaLimitReached(auth, now); reached {
 		return true
 	}
 	if hasUnauthorizedAuthFailure(auth) {

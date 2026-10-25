@@ -1,3 +1,14 @@
+FROM oven/bun:1.3.14 AS management-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /management
+
+# Pin the panel source so every image contains the matching quota controls.
+ARG MANAGEMENT_UI_COMMIT=601bfc7d84e7c17ed8fd19b6dedb20d92c2b5494
+RUN git init && git remote add origin https://github.com/daddodev/Cli-Proxy-API-Management-Center.git && git fetch --depth 1 origin ${MANAGEMENT_UI_COMMIT} && git checkout --detach FETCH_HEAD
+RUN bun install --frozen-lockfile && bun run build
+
 FROM golang:1.26-bookworm AS builder
 
 WORKDIR /app
@@ -25,6 +36,10 @@ RUN mkdir /CLIProxyAPI
 COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 
 COPY config.example.yaml /CLIProxyAPI/config.example.yaml
+
+COPY --from=management-builder /management/dist/index.html /CLIProxyAPI/static/management.html
+
+ENV MANAGEMENT_STATIC_PATH=/CLIProxyAPI/static
 
 WORKDIR /CLIProxyAPI
 

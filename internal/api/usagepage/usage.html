@@ -1107,6 +1107,9 @@ function accountHtml(p, a, i) {
             <div class="win-reset">${w.resets_at ? `<b data-rel="${esc(w.resets_at)}">${esc(relTime(w.resets_at))}</b> · ${esc(absShort(w.resets_at))}` : "no reset time"}</div>
         </div>`
     }).join("")
+    meta.push(`<span>Priority ${esc(a.priority ?? 0)}</span>`)
+    meta.push(`<span>${a.quota_limit_percent > 0 ? `Stop at ${esc(a.quota_limit_percent)}% used` : "Upstream limit"}</span>`)
+    if (a.limit_reached) chips.push('<span class="pill">Usage limit reached</span>')
     const r = a.resets
     let act = ""
     if (!r) act = `<span class="credit">resets unknown</span>`
@@ -1208,7 +1211,7 @@ function renderLimits() {
     const providers = state.limits.providers || []
     patch(body, providers.length ? providers.map(providerHtml).join("") : `<div class="locked" data-key="empty"><h3>No accounts</h3><p>No Claude or Codex OAuth accounts are configured.</p></div>`)
     const checked = state.limits.checked_at ? `checked ${absShort(state.limits.checked_at)}` : ""
-    $("#limits-meta").textContent = checked
+    $("#limits-meta").textContent = `${checked} · ${state.limits.routing_strategy === "fill-first" ? "One account at a time (priority)" : state.limits.routing_strategy === "weighted-round-robin" ? "Weighted distribution" : "Distributed (round-robin)"}`
 }
 
 // ---------- Reset flow ----------
