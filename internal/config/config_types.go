@@ -380,6 +380,14 @@ type DiscoveryConfig struct {
 	AdvertiseManagement bool `yaml:"advertise-management" json:"advertise-management"`
 }
 
+// UsageHistoryConfig controls the SQLite usage history used by the usage dashboard.
+type UsageHistoryConfig struct {
+	// Disabled turns off recording and serving usage history.
+	Disabled bool `yaml:"disabled" json:"disabled"`
+	// Path is the SQLite database file. Defaults to usage-history.db inside the auth directory.
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+}
+
 // RemoteManagement holds management API configuration under 'remote-management'.
 type RemoteManagement struct {
 	// AllowRemote toggles remote (non-localhost) access to management API.

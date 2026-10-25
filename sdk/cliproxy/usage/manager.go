@@ -415,6 +415,8 @@ type Manager struct {
 	once     sync.Once
 	stopOnce sync.Once
 	cancel   context.CancelFunc
+	// done is closed when the dispatcher has drained the queue and exited.
+	done chan struct{}
 
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -444,11 +446,19 @@ func (m *Manager) Start(ctx context.Context) {
 		}
 		var workerCtx context.Context
 		workerCtx, m.cancel = context.WithCancel(ctx)
-		go m.run(workerCtx)
+		m.done = make(chan struct{})
+		go func() {
+			defer close(m.done)
+			m.run(workerCtx)
+		}()
 	})
 }
 
-// Stop stops the dispatcher and drains the queue.
+// stopDrainTimeout bounds how long Stop waits for queued records to reach
+// plugins, so a stuck plugin cannot hang shutdown.
+const stopDrainTimeout = 10 * time.Second
+
+// Stop stops the dispatcher and waits for it to drain the queue.
 func (m *Manager) Stop() {
 	if m == nil {
 		return
@@ -461,6 +471,16 @@ func (m *Manager) Stop() {
 		m.closed = true
 		m.mu.Unlock()
 		m.cond.Broadcast()
+		if m.done == nil {
+			return
+		}
+		timer := time.NewTimer(stopDrainTimeout)
+		defer timer.Stop()
+		select {
+		case <-m.done:
+		case <-timer.C:
+			log.Warn("usage manager: timed out draining usage records on stop")
+		}
 	})
 }
 

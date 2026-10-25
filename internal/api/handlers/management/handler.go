@@ -63,6 +63,9 @@ type Handler struct {
 	pluginReleases          pluginReleaseCache
 	siwcOAuthFactory        func(*config.Config) siwcOAuthService
 	siwcCommitMu            sync.Mutex
+	usageLimits             usageLimitsCache
+	// usageTransport overrides the upstream transport for usage probes in tests.
+	usageTransport http.RoundTripper
 }
 
 type configReloadSnapshot struct {

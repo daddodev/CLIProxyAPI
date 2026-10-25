@@ -1185,6 +1185,13 @@ observability:
     # Default: 60. Max: 3600.
     redis-usage-queue-retention-seconds: 60
 
+    # SQLite token history and cost estimates shown at /usage.html.
+    # Per-minute rows are kept for 7 days, then folded into hourly rows.
+    history:
+      disabled: false
+      # Defaults to usage-history.db inside auth-dir.
+      # path: "/path/to/usage-history.db"
+
   # Enable pprof HTTP debug server (host:port). Keep it bound to localhost for safety.
   pprof:
     enable: false
