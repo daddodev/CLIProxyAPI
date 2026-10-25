@@ -1030,26 +1030,27 @@ function arcPath(cx, cy, r, a0, a1) {
 function gaugeHtml(p, w) {
     const used = Number(w.used_percent) || 0
     const cap = Math.max(100, Number(w.capacity_percent) || 100)
+    const remaining = Math.max(0, Math.min(cap, cap - used))
     const n = Math.max(1, Math.round(cap / 100))
     const reporting = (p.accounts || []).map((a, i) => ({ a, i, w: acctWin(a, w) })).filter((x) => x.w)
     let segs
     if (reporting.length === n) {
-        segs = reporting.map((x) => ({ used: Number(x.w.used_percent) || 0, color: acctColor(p.provider, x.i), label: x.a.label }))
+        segs = reporting.map((x) => ({ remaining: Math.max(0, Math.min(100, 100 - (Number(x.w.used_percent) || 0))), color: acctColor(p.provider, x.i), label: x.a.label }))
     } else {
-        segs = Array.from({ length: n }, (_, i) => ({ used: Math.min(100, Math.max(0, used - i * 100)), color: acctColor(p.provider, i), label: "" }))
+        segs = Array.from({ length: n }, (_, i) => ({ remaining: Math.min(100, Math.max(0, remaining - i * 100)), color: acctColor(p.provider, i), label: "" }))
     }
-    // One continuous track: each account's usage is packed in order from the
-    // start, and all unused capacity collapses at the end of the dial.
+    // Pack each account's remaining capacity from the start of one continuous
+    // track, leaving all depleted capacity at the end of the dial.
     const cx = 60, cy = 60, r = 47, sw = 10
     const track = arcPath(cx, cy, r, -135, 135)
     const sepUnits = 0.7
     let arcs = `<path class="seg-trk" d="${track}" stroke-width="${sw}" fill="none"/>`
     let ticks = ""
     let start = 0
-    const pieces = segs.map((s) => ({ ...s, len: (Math.min(100, Math.max(0, s.used)) / cap) * 100 })).filter((s) => s.len > 0)
+    const pieces = segs.map((s) => ({ ...s, len: (s.remaining / cap) * 100 })).filter((s) => s.len > 0)
     pieces.forEach((s, i) => {
         const len = Math.max(0, s.len - (i < pieces.length - 1 ? sepUnits : 0))
-        arcs += `<path class="seg-fill" d="${track}" pathLength="100" stroke-width="${sw}" fill="none" style="stroke:${s.color};stroke-dasharray:${round(len, 2)} 100;stroke-dashoffset:${round(-start, 2)}"><title>${esc(s.label ? `${s.label}: ${fmtPct(s.used)}` : fmtPct(s.used))}</title></path>`
+        arcs += `<path class="seg-fill" d="${track}" pathLength="100" stroke-width="${sw}" fill="none" style="stroke:${s.color};stroke-dasharray:${round(len, 2)} 100;stroke-dashoffset:${round(-start, 2)}"><title>${esc(s.label ? `${s.label}: ${fmtPct(s.remaining)} left` : `${fmtPct(s.remaining)} left`)}</title></path>`
         start += s.len
     })
     for (let k = 0; k <= n * 4; k++) {
@@ -1063,11 +1064,11 @@ function gaugeHtml(p, w) {
     const reset = w.next_reset_at
     const total = p.account_count ?? (p.accounts || []).length
     const note = w.reporting_accounts != null && w.reporting_accounts < total ? `${w.reporting_accounts} of ${total} reporting` : ""
-    const aria = `${p.label} ${w.label}: ${fmtPct(used)} used of ${fmtPct(cap)} across ${n} account${n > 1 ? "s" : ""}${reset ? `, next reset ${relTime(reset)}` : ""}`
+    const aria = `${p.label} ${w.label}: ${fmtPct(remaining)} left of ${fmtPct(cap)} across ${n} account${n > 1 ? "s" : ""}${reset ? `, next reset ${relTime(reset)}` : ""}`
     return `<div class="gauge" data-key="g-${esc(winKey(w))}">
         <div class="g-dial">
             <svg viewBox="0 0 120 106" role="img" aria-label="${esc(aria)}">${ticks}${arcs}</svg>
-            <div class="g-center" aria-hidden="true"><div class="g-val ${tone}">${pctParts(used)}</div><div class="g-cap">of ${esc(fmtPct(cap))}</div></div>
+            <div class="g-center" aria-hidden="true"><div class="g-val ${tone}">${pctParts(remaining)}</div><div class="g-cap">left of ${esc(fmtPct(cap))}</div></div>
             <div class="g-label" aria-hidden="true" title="${esc(w.label)}">${esc(w.label)}</div>
         </div>
         <div class="g-reset">${reset ? `<div class="g-rel" data-rel="${esc(reset)}">${esc(relTime(reset))}</div><div class="g-abs"><span class="long">${esc(absTime(reset))}</span><span class="short">${esc(absShort(reset))}</span></div>` : `<div class="g-abs">no reset time</div>`}${note ? `<div class="g-note">${esc(note)}</div>` : ""}</div>
@@ -1096,11 +1097,13 @@ function accountHtml(p, a, i) {
     meta.push(`<span class="${meta.length ? "dot" : ""}">${esc(SOURCE_LABEL[a.source] || a.source || "")}${a.observed_at ? ` <span data-rel="${esc(a.observed_at)}">${esc(relTime(a.observed_at))}</span>` : ""}</span>`)
     const wins = (a.windows || []).map((w) => {
         const u = Number(w.used_percent) || 0
+        const remaining = Math.max(0, Math.min(100, 100 - u))
         const tone = u >= 100 ? "full" : u >= 85 ? "hot" : ""
-        const pace = paceAt(w)
+        const elapsed = paceAt(w)
+        const pace = elapsed == null ? null : 100 - elapsed
         return `<div class="win" data-key="w-${esc(winKey(w))}">
-            <div class="win-top"><span>${esc(w.label)}</span><span class="v ${tone}">${esc(fmtPct(u))}</span></div>
-            <div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(u, 1)}" aria-label="${esc(`${w.label} used`)}"><i style="width:${Math.min(100, Math.max(0, u))}%"></i>${pace != null ? `<b style="left:${round(pace, 2)}%" title="Even pace"></b>` : ""}</div>
+            <div class="win-top"><span>${esc(w.label)}</span><span class="v ${tone}">${esc(fmtPct(remaining))} left</span></div>
+            <div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(remaining, 1)}" aria-label="${esc(`${w.label} left`)}"><i style="width:${remaining}%"></i>${pace != null ? `<b style="left:${round(pace, 2)}%" title="Even pace"></b>` : ""}</div>
             <div class="win-reset">${w.resets_at ? `<b data-rel="${esc(w.resets_at)}">${esc(relTime(w.resets_at))}</b> · ${esc(absShort(w.resets_at))}` : "no reset time"}</div>
         </div>`
     }).join("")
