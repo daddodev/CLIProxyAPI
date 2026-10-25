@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS usage_hour (
 	unclassified INTEGER NOT NULL DEFAULT 0 CHECK (unclassified >= 0),
 	PRIMARY KEY (bucket, provider, model, auth_index, tier)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS usage_import_state (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	before INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usage_import_events (
+	id TEXT PRIMARY KEY
+) WITHOUT ROWID;
 `
 
 const counterColumns = "requests, failed, uncached_input, cache_read, cache_write, output, reasoning, unclassified"
@@ -86,14 +93,14 @@ type rollupKey struct {
 
 // Counters holds additive token and request counts.
 type Counters struct {
-	Requests      int64
-	Failed        int64
-	UncachedInput int64
-	CacheRead     int64
-	CacheWrite    int64
-	Output        int64
-	Reasoning     int64
-	Unclassified  int64
+	Requests      int64 `json:"requests"`
+	Failed        int64 `json:"failed_requests"`
+	UncachedInput int64 `json:"uncached_input_tokens"`
+	CacheRead     int64 `json:"cache_read_tokens"`
+	CacheWrite    int64 `json:"cache_write_tokens"`
+	Output        int64 `json:"output_tokens"`
+	Reasoning     int64 `json:"reasoning_tokens"`
+	Unclassified  int64 `json:"unclassified_tokens"`
 }
 
 func (c *Counters) add(o Counters) {
@@ -127,6 +134,10 @@ type Store struct {
 
 // Open creates or opens the history database at path and starts the writer.
 func Open(path string) (*Store, error) {
+	return openWithClock(path, time.Now)
+}
+
+func openWithClock(path string, now func() time.Time) (*Store, error) {
 	if errMkdir := os.MkdirAll(filepath.Dir(path), 0o700); errMkdir != nil {
 		return nil, fmt.Errorf("create usage history directory: %w", errMkdir)
 	}
@@ -142,10 +153,14 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("create usage history schema: %w", errSchema)
 	}
+	if errCutoff := initializeImportCutoff(db, now()); errCutoff != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("initialize usage import cutoff: %w", errCutoff)
+	}
 	s := &Store{
 		db:      db,
 		path:    path,
-		now:     time.Now,
+		now:     now,
 		pending: make(map[rollupKey]Counters),
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),

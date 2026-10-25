@@ -12,7 +12,12 @@ import (
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	store, errOpen := Open(filepath.Join(t.TempDir(), "usage.db"))
+	return openTestStoreWithClock(t, time.Now)
+}
+
+func openTestStoreWithClock(t *testing.T, now func() time.Time) *Store {
+	t.Helper()
+	store, errOpen := openWithClock(filepath.Join(t.TempDir(), "usage.db"), now)
 	if errOpen != nil {
 		t.Fatalf("open store: %v", errOpen)
 	}
@@ -132,13 +137,12 @@ func TestHistoryDayBucketsUseLocation(t *testing.T) {
 }
 
 func TestCompactionKeepsTotals(t *testing.T) {
-	store := openTestStore(t)
 	old := time.Date(2026, 10, 1, 10, 15, 0, 0, time.UTC)
+	store := openTestStoreWithClock(t, func() time.Time { return old.Add(30 * 24 * time.Hour) })
 	store.add(old, "claude", "claude-opus-4-5", "a1", TierStandard, Counters{Requests: 1, Output: 100})
 	store.add(old.Add(20*time.Minute), "claude", "claude-opus-4-5", "a1", TierStandard, Counters{Requests: 1, Output: 50})
 	store.flush()
 
-	store.now = func() time.Time { return old.Add(30 * 24 * time.Hour) }
 	store.compact()
 
 	var minuteRows, hourRows int
@@ -260,7 +264,6 @@ func TestParseRateTable(t *testing.T) {
 }
 
 func TestHistoryDayBucketsInHalfHourZone(t *testing.T) {
-	store := openTestStore(t)
 	kolkata, errLoad := time.LoadLocation("Asia/Kolkata")
 	if errLoad != nil {
 		t.Fatalf("load location: %v", errLoad)
@@ -268,7 +271,7 @@ func TestHistoryDayBucketsInHalfHourZone(t *testing.T) {
 	// 00:10 local on Oct 25 is 18:40 UTC on Oct 24, inside the UTC hour that
 	// starts before local midnight.
 	at := time.Date(2026, 10, 25, 0, 10, 0, 0, kolkata)
-	store.now = func() time.Time { return at.Add(time.Hour) }
+	store := openTestStoreWithClock(t, func() time.Time { return at.Add(time.Hour) })
 	store.add(at, "claude", "m", "a", TierStandard, Counters{Requests: 1, Output: 7})
 
 	result, errHistory := store.History(context.Background(), HistoryQuery{

@@ -1187,6 +1187,8 @@ observability:
 
     # SQLite token history and cost estimates shown at /usage.html.
     # Per-minute rows are kept for 7 days, then folded into hourly rows.
+    # Preview historical CLI usage: cli-proxy-api usage-import --config config.yaml --dry-run
+    # See docs/usage-import.md for custom homes, cutoffs, and repeat imports.
     history:
       disabled: false
       # Defaults to usage-history.db inside auth-dir.

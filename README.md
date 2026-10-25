@@ -153,7 +153,12 @@ see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
 
 ## Usage Statistics
 
-Since v6.10.0, CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) no longer ship built-in usage statistics. If you need usage statistics, use:
+This fork includes a persistent token and cost dashboard at `/usage.html`.
+To backfill older Codex and Claude Code sessions, use
+`cli-proxy-api usage-import --config config.yaml --dry-run`; see the
+[historical usage import guide](docs/usage-import.md).
+
+Upstream CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) stopped shipping built-in usage statistics in v6.10.0. External usage tools include:
 
 ### [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
 
