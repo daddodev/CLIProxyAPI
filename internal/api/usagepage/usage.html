@@ -119,13 +119,30 @@ button, input { font: inherit; color: inherit }
     font-variant-numeric: tabular-nums;
 }
 .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none }
-.live[data-state="live"] i { background: var(--ok); animation: pulse 2.4s ease-out infinite }
+.live[data-state="live"] i { background: var(--ok) }
 .live[data-state="stale"] i { background: var(--warn) }
 .live[data-state="error"] i { background: var(--bad) }
 .live[data-state="error"] { color: var(--bad) }
-@keyframes pulse {
-    0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 60%, transparent) }
-    70%, 100% { box-shadow: 0 0 0 7px transparent }
+.live-menu { position: relative }
+.live-menu summary { cursor: pointer; list-style: none }
+.live-menu summary::-webkit-details-marker { display: none }
+.live-details {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: 20;
+    width: min(340px, calc(100vw - 32px));
+    max-height: 60vh;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.7;
+    box-shadow: 0 8px 24px #0002;
 }
 
 /* Buttons */
@@ -487,7 +504,7 @@ dialog input:focus-visible { outline-offset: 0 }
             <span class="brand-name">CLIProxyAPI <span>/ usage</span></span>
             <span class="demo-badge" id="demo-badge" hidden>Demo</span>
         </div>
-        <div class="live" id="live" data-state="idle" role="status" aria-live="off"><i aria-hidden="true"></i><span class="lbl" id="live-lbl">Connecting</span><span id="live-ago"></span></div>
+        <details class="live-menu" id="live-menu"><summary class="live" id="live" data-state="idle" aria-label="Connection status and update details"><i aria-hidden="true"></i><span class="lbl" id="live-lbl">Connecting</span></summary><div class="live-details" id="live-details"></div></details>
         <button class="btn btn-icon btn-ghost" id="refresh" type="button" aria-label="Refresh now" title="Refresh now">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.8-4.07"/><path d="M13.5 2.5v3h-3"/></svg>
         </button>
@@ -1094,7 +1111,6 @@ function accountHtml(p, a, i) {
     if (a.status === "error") chips.push(`<span class="chip chip-bad">Probe failed</span>`)
     const meta = []
     if (a.plan) meta.push(`<span>${esc(a.plan)}</span>`)
-    meta.push(`<span class="${meta.length ? "dot" : ""}">${esc(SOURCE_LABEL[a.source] || a.source || "")}${a.observed_at ? ` <span data-rel="${esc(a.observed_at)}">${esc(relTime(a.observed_at))}</span>` : ""}</span>`)
     const wins = (a.windows || []).map((w) => {
         const u = Number(w.used_percent) || 0
         const remaining = Math.max(0, Math.min(100, 100 - u))
@@ -1210,8 +1226,7 @@ function renderLimits() {
     patch(notice, state.limitsErr ? `<div class="notice">Couldn't refresh limits: ${esc(state.limitsErr)}. Showing the last data.</div>` : "")
     const providers = state.limits.providers || []
     patch(body, providers.length ? providers.map(providerHtml).join("") : `<div class="locked" data-key="empty"><h3>No accounts</h3><p>No Claude or Codex OAuth accounts are configured.</p></div>`)
-    const checked = state.limits.checked_at ? `checked ${absShort(state.limits.checked_at)}` : ""
-    $("#limits-meta").textContent = `${checked} · ${state.limits.routing_strategy === "fill-first" ? "One account at a time (priority)" : state.limits.routing_strategy === "weighted-round-robin" ? "Weighted distribution" : "Distributed (round-robin)"}`
+    $("#limits-meta").textContent = `${state.limits.routing_strategy === "fill-first" ? "One account at a time (priority)" : state.limits.routing_strategy === "weighted-round-robin" ? "Weighted distribution" : "Distributed (round-robin)"}`
 }
 
 // ---------- Reset flow ----------
@@ -1631,8 +1646,7 @@ function renderActivity() {
     const pn = $("#pricing-note")
     pn.className = "panel-note" + (pr.status === "unavailable" || pr.status === "cached" ? " warn" : "")
     pn.textContent = pr.status === "unavailable" ? "Pricing unavailable — costs may be missing"
-        : pr.status === "cached" ? `Cached prices${pr.updated_at ? ` from ${absShort(pr.updated_at)}` : ""}`
-        : pr.updated_at ? `Prices updated ${relTime(pr.updated_at)}` : ""
+        : pr.status === "cached" ? "Cached prices" : ""
 
     const totCost = tot.cost_usd || 0
     const rows = models.map((m, i) => {
@@ -1695,23 +1709,32 @@ new ResizeObserver(() => {
 function renderLive() {
     const live = $("#live")
     const lbl = $("#live-lbl")
-    const ago = $("#live-ago")
+    const details = []
+    if (state.limitsAt) details.push(`Limits updated ${agoShort(Date.now() - state.limitsAt)}`)
+    if (state.historyAt) details.push(`Activity updated ${agoShort(Date.now() - state.historyAt)}`)
+    for (const p of state.limits?.providers || []) {
+        for (const a of p.accounts || []) {
+            details.push(`${a.label}: ${SOURCE_LABEL[a.source] || a.source || "no data"}${a.observed_at ? ` · ${relTime(a.observed_at)}` : ""}`)
+        }
+    }
+    const pricingAt = state.history?.pricing?.updated_at
+    if (pricingAt) details.push(`Prices updated ${relTime(pricingAt)}`)
+    if (state.limitsErr) details.push(`Last refresh failed: ${state.limitsErr}`)
+    patch($("#live-details"), details.length ? details.map((text) => `<div>${esc(text)}</div>`).join("") : "Update details will appear once connected.")
     const busy = pollers.limits.busy || pollers.history.busy
     $("#refresh").classList.toggle("is-busy", busy)
-    if (!state.key) { live.dataset.state = "idle"; lbl.textContent = "Locked"; ago.textContent = ""; return }
+    if (!state.key) { live.dataset.state = "idle"; lbl.textContent = "Locked"; return }
     const at = state.limitsAt
     if (!at) {
         live.dataset.state = state.limitsErr ? "error" : "idle"
         lbl.textContent = state.limitsErr ? "Offline" : "Connecting"
-        ago.textContent = ""
         live.title = state.limitsErr || ""
         return
     }
     const age = Date.now() - at
     const stale = state.limitsErr || age > LIMITS_INTERVAL * 3
     live.dataset.state = stale ? "stale" : "live"
-    lbl.textContent = stale ? "Stale ·" : "Live ·"
-    ago.textContent = `updated ${agoShort(age)}`
+    lbl.textContent = stale ? "Stale" : "Live"
     live.title = state.limitsErr ? `Last refresh failed: ${state.limitsErr}` : ""
 }
 
@@ -1724,6 +1747,17 @@ function tick() {
     renderLive()
 }
 setInterval(tick, 1000)
+
+document.addEventListener("click", (e) => {
+    const menu = $("#live-menu")
+    if (!menu.contains(e.target)) menu.open = false
+})
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#live-menu").open) {
+        $("#live-menu").open = false
+        $("#live").focus()
+    }
+})
 
 $("#refresh").addEventListener("click", () => { if (state.key) startPolling(); else openAuth() })
 
