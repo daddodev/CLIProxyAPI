@@ -8,16 +8,26 @@ import (
 	"time"
 )
 
-const QuotaLimitPercentKey = "quota_limit_percent"
+const (
+	// QuotaLimitPercentKey is the legacy shared percentage-used ceiling.
+	QuotaLimitPercentKey             = "quota_limit_percent"
+	QuotaFiveHourRemainingPercentKey = "quota_5h_remaining_percent"
+	QuotaWeeklyRemainingPercentKey   = "quota_weekly_remaining_percent"
+)
 
 // QuotaLimitPercent returns the optional credential-wide utilization ceiling.
 // Zero means that only upstream quota limits apply.
 func QuotaLimitPercent(a *Auth) float64 {
+	value, _ := quotaPercent(a, QuotaLimitPercentKey)
+	return value
+}
+
+func quotaPercent(a *Auth, key string) (float64, bool) {
 	if a == nil {
-		return 0
+		return 0, false
 	}
 	var raw string
-	switch v := a.Metadata[QuotaLimitPercentKey].(type) {
+	switch v := a.Metadata[key].(type) {
 	case float64:
 		raw = strconv.FormatFloat(v, 'f', -1, 64)
 	case int:
@@ -28,17 +38,47 @@ func QuotaLimitPercent(a *Auth) float64 {
 		raw = v
 	}
 	n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 || n > 100 {
-		return 0
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 || n > 100 {
+		return 0, false
 	}
-	return n
+	return n, true
+}
+
+// quotaWindowLimit returns the percentage-used ceiling for one window. Explicit
+// zero disables that window's reserve, overriding the legacy shared ceiling.
+func quotaWindowLimit(a *Auth, key string) (float64, bool) {
+	if key != "" {
+		if remaining, ok := quotaPercent(a, key); ok {
+			return 100 - remaining, remaining > 0
+		}
+	}
+	limit := QuotaLimitPercent(a)
+	return limit, limit > 0
+}
+
+// QuotaRemainingPercent returns the effective reserve for one of the two
+// remaining-percent metadata keys, translating a legacy ceiling when needed.
+func QuotaRemainingPercent(a *Auth, key string) float64 {
+	if remaining, ok := quotaPercent(a, key); ok {
+		return remaining
+	}
+	if limit := QuotaLimitPercent(a); limit > 0 {
+		return 100 - limit
+	}
+	return 0
+}
+
+// HasQuotaLimits reports whether quota observations can affect any window's routing.
+func HasQuotaLimits(a *Auth) bool {
+	_, fiveHour := quotaWindowLimit(a, QuotaFiveHourRemainingPercentKey)
+	_, weekly := quotaWindowLimit(a, QuotaWeeklyRemainingPercentKey)
+	return fiveHour || weekly
 }
 
 // QuotaLimitReached checks every known account-wide window. Expired windows
 // cease blocking even when the account has not made another upstream request.
 func QuotaLimitReached(a *Auth, now time.Time) (bool, time.Time) {
-	limit := QuotaLimitPercent(a)
-	if limit == 0 {
+	if !HasQuotaLimits(a) {
 		return false, time.Time{}
 	}
 	signal := func(name string) string {
@@ -60,7 +100,11 @@ func QuotaLimitReached(a *Auth, now time.Time) (bool, time.Time) {
 	}
 	blocked, unknownReset := false, false
 	var recoverAt time.Time
-	check := func(raw string, scale float64, reset time.Time) {
+	check := func(key, raw string, scale float64, reset time.Time) {
+		limit, enabled := quotaWindowLimit(a, key)
+		if !enabled {
+			return
+		}
 		used, err := strconv.ParseFloat(raw, 64)
 		if err != nil || math.IsNaN(used) || math.IsInf(used, 0) || used*scale < limit {
 			return
@@ -77,9 +121,12 @@ func QuotaLimitReached(a *Auth, now time.Time) (bool, time.Time) {
 	}
 	switch strings.ToLower(strings.TrimSpace(a.Provider)) {
 	case "claude":
-		for _, window := range []string{"5h", "7d"} {
-			prefix := "Anthropic-Ratelimit-Unified-" + window
-			check(signal(prefix+"-Utilization"), 100, parseTime(signal(prefix+"-Reset")))
+		for _, window := range []struct{ prefix, key string }{
+			{"5h", QuotaFiveHourRemainingPercentKey},
+			{"7d", QuotaWeeklyRemainingPercentKey},
+		} {
+			prefix := "Anthropic-Ratelimit-Unified-" + window.prefix
+			check(window.key, signal(prefix+"-Utilization"), 100, parseTime(signal(prefix+"-Reset")))
 		}
 	case "codex":
 		for _, window := range []string{"Primary", "Secondary"} {
@@ -90,7 +137,24 @@ func QuotaLimitReached(a *Auth, now time.Time) (bool, time.Time) {
 					reset = a.Quota.ObservedAt.Add(time.Duration(seconds * float64(time.Second)))
 				}
 			}
-			check(signal(prefix+"-Used-Percent"), 1, reset)
+			key := QuotaFiveHourRemainingPercentKey
+			if window == "Secondary" {
+				key = QuotaWeeklyRemainingPercentKey
+			}
+			// Codex can report the weekly quota as Primary on some plans.
+			// Prefer the advertised duration; use the conventional order only
+			// when the duration is absent.
+			if minutes := signal(prefix + "-Window-Minutes"); minutes != "" {
+				switch minutes {
+				case "300":
+					key = QuotaFiveHourRemainingPercentKey
+				case "10080":
+					key = QuotaWeeklyRemainingPercentKey
+				default:
+					key = ""
+				}
+			}
+			check(key, signal(prefix+"-Used-Percent"), 1, reset)
 		}
 	}
 	if unknownReset {

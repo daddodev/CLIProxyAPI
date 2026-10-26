@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /management
 
 # Pin the panel source so every image contains the matching quota controls.
-ARG MANAGEMENT_UI_COMMIT=601bfc7d84e7c17ed8fd19b6dedb20d92c2b5494
+ARG MANAGEMENT_UI_COMMIT=0fb5ebf398791b7f1fcf75ea89f5a49eab3c975f
 RUN git init && git remote add origin https://github.com/daddodev/Cli-Proxy-API-Management-Center.git && git fetch --depth 1 origin ${MANAGEMENT_UI_COMMIT} && git checkout --detach FETCH_HEAD
 RUN bun install --frozen-lockfile && bun run build
 

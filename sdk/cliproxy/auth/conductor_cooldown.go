@@ -1348,7 +1348,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	m.mu.Unlock()
 	releaseMutation()
 	if m.scheduler != nil && authSnapshot != nil {
-		credentialScopedResult := result.CredentialScope || scheduleUnauthorizedRefresh || QuotaLimitPercent(authSnapshot) > 0
+		credentialScopedResult := result.CredentialScope || scheduleUnauthorizedRefresh || HasQuotaLimits(authSnapshot)
 		var targetModels []string
 		if !credentialScopedResult && modelKey != "" {
 			targetModels = append(targetModels, modelKey)

@@ -506,18 +506,21 @@ func normalizeAuthFilePatchFields(fields map[string]json.RawMessage) (map[string
 		canonicalNames[canonicalPath] = originalRoot == parts[0]
 	}
 	for key, raw := range normalized {
-		if rootAuthFileField(key) != coreauth.QuotaLimitPercentKey {
+		root := rootAuthFileField(key)
+		switch root {
+		case coreauth.QuotaLimitPercentKey, coreauth.QuotaFiveHourRemainingPercentKey, coreauth.QuotaWeeklyRemainingPercentKey:
+		default:
 			continue
 		}
-		if key != coreauth.QuotaLimitPercentKey {
-			return nil, fmt.Errorf("quota_limit_percent does not support nested fields")
+		if key != root {
+			return nil, fmt.Errorf("%s does not support nested fields", root)
 		}
 		if string(raw) == "null" {
 			continue
 		}
 		var value float64
 		if err := json.Unmarshal(raw, &value); err != nil || value < 0 || value > 100 {
-			return nil, fmt.Errorf("quota_limit_percent must be a number between 0 and 100, or null")
+			return nil, fmt.Errorf("%s must be a number between 0 and 100, or null", root)
 		}
 	}
 	return normalized, nil

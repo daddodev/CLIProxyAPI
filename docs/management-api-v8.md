@@ -251,16 +251,27 @@ extensions retain their declared `/v0/management` routes.
 
 The quota page (`/management.html#/quota`) uses existing v8 credential operations:
 
-- `PATCH /credentials/fields` with `{"name":"account.json","priority":10,"quota_limit_percent":80}` saves account routing settings in the auth file.
+- `PATCH /credentials/fields` with `{"name":"account.json","priority":10,"quota_5h_remaining_percent":20,"quota_weekly_remaining_percent":10,"quota_limit_percent":null}` saves account routing settings in the auth file.
 - `PATCH /credentials/status` with `{"name":"account.json","disabled":true}` disables an account; `false` enables it.
 - `PUT /config/routing/strategy` with `"fill-first"` uses one eligible account at a time. `"round-robin"` distributes requests; `"weighted-round-robin"` preserves weighted distribution. Higher priority numbers are preferred in every mode; distribution occurs within the highest available tier. Existing session affinity remains active until the bound account becomes unavailable.
 
-`quota_limit_percent` accepts numbers from 0 through 100, or `null`. Zero, null,
-and an absent field use the provider's own limits. For Claude and Codex, a positive
-value excludes the account when either reported account-wide quota window reaches
-that percentage. The account becomes eligible after all blocking windows reset or
-new observations report usage below the ceiling. Model-specific quotas retain
-their existing routing behavior. Unsupported providers have no percentage ceiling.
+`quota_5h_remaining_percent` and `quota_weekly_remaining_percent` independently
+set the remaining quota to preserve for the five-hour and weekly windows. Both
+accept numbers from 0 through 100, or `null`. For example, 20 stops the account
+when that window reaches 80% used (20% left). Explicit zero uses the provider's
+own limit for that window; 100 blocks as soon as any usage is known, including
+zero usage. Either window can block the account. It becomes eligible after all
+blocking windows reset or newer observations report usage below their ceilings.
+Unknown usage does not block an account, even with a 100% reserve.
+
+For compatibility, `quota_limit_percent` retains its original meaning: a shared
+percentage **used** ceiling. An absent or null per-window field falls back to
+that legacy ceiling; an explicit zero overrides it for that window. The management
+panel converts legacy ceilings to remaining percentages on read and clears the
+legacy field when saving the two independent reserves. Existing auth files keep
+their routing behavior until edited. These limits apply to Claude and Codex;
+model-specific quotas retain their existing routing behavior. Codex windows use
+the reported duration when available rather than assuming Primary always means 5h.
 
 Enforcement uses the latest upstream response headers, WebSocket quota signals,
 or successful usage-dashboard probes. Unknown quota usage does not block an
@@ -269,7 +280,8 @@ requests and delayed upstream reporting can exceed it. If a blocking window has
 no reset time, a newer observation is needed to release it.
 
 `GET /observability/usage/limits` includes `routing_strategy` and each account's
-`priority`, `quota_limit_percent`, and `limit_reached`. A threshold-blocked account
+`priority`, effective `quota_5h_remaining_percent` and `quota_weekly_remaining_percent`,
+legacy `quota_limit_percent`, and `limit_reached`. A threshold-blocked account
 has status `quota_limit` when it has no other status condition. `/usage.html`
 displays these fields alongside enabled/disabled state and upstream quota windows.
 

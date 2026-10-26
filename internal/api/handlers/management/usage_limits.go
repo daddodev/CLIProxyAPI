@@ -67,20 +67,22 @@ type usageResets struct {
 }
 
 type usageAccount struct {
-	Priority          int           `json:"priority"`
-	QuotaLimitPercent float64       `json:"quota_limit_percent"`
-	LimitReached      bool          `json:"limit_reached"`
-	AuthIndex         string        `json:"auth_index"`
-	Label             string        `json:"label"`
-	Plan              string        `json:"plan"`
-	Disabled          bool          `json:"disabled"`
-	Status            string        `json:"status"`
-	CooldownUntil     *time.Time    `json:"cooldown_until"`
-	Source            string        `json:"source"`
-	ObservedAt        *time.Time    `json:"observed_at"`
-	Error             string        `json:"error"`
-	Windows           []usageWindow `json:"windows"`
-	Resets            *usageResets  `json:"resets"`
+	Priority                      int           `json:"priority"`
+	QuotaLimitPercent             float64       `json:"quota_limit_percent"`
+	QuotaFiveHourRemainingPercent float64       `json:"quota_5h_remaining_percent"`
+	QuotaWeeklyRemainingPercent   float64       `json:"quota_weekly_remaining_percent"`
+	LimitReached                  bool          `json:"limit_reached"`
+	AuthIndex                     string        `json:"auth_index"`
+	Label                         string        `json:"label"`
+	Plan                          string        `json:"plan"`
+	Disabled                      bool          `json:"disabled"`
+	Status                        string        `json:"status"`
+	CooldownUntil                 *time.Time    `json:"cooldown_until"`
+	Source                        string        `json:"source"`
+	ObservedAt                    *time.Time    `json:"observed_at"`
+	Error                         string        `json:"error"`
+	Windows                       []usageWindow `json:"windows"`
+	Resets                        *usageResets  `json:"resets"`
 }
 
 type combinedWindow struct {
@@ -275,6 +277,8 @@ func usageAccountLabel(auth *coreauth.Auth) string {
 func (h *Handler) usageAccountFor(ctx context.Context, auth *coreauth.Auth, now time.Time, force bool) (account usageAccount) {
 	defer func() {
 		account.QuotaLimitPercent = coreauth.QuotaLimitPercent(auth)
+		account.QuotaFiveHourRemainingPercent = coreauth.QuotaRemainingPercent(auth, coreauth.QuotaFiveHourRemainingPercentKey)
+		account.QuotaWeeklyRemainingPercent = coreauth.QuotaRemainingPercent(auth, coreauth.QuotaWeeklyRemainingPercentKey)
 		account.Priority, _ = strconv.Atoi(auth.Attributes["priority"])
 		// Successful probes also feed the scheduler, so thresholds do not depend
 		// on whether the last business response carried quota headers.

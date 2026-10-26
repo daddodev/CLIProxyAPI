@@ -1124,7 +1124,9 @@ function accountHtml(p, a, i) {
         </div>`
     }).join("")
     meta.push(`<span>Priority ${esc(a.priority ?? 0)}</span>`)
-    meta.push(`<span>${a.quota_limit_percent > 0 ? `Stop at ${esc(a.quota_limit_percent)}% used` : "Upstream limit"}</span>`)
+    for (const [label, reserve] of [["5h", a.quota_5h_remaining_percent], ["Weekly", a.quota_weekly_remaining_percent]]) {
+        meta.push(`<span>${label}: ${reserve > 0 ? `stop with ${esc(reserve)}% left` : "upstream limit"}</span>`)
+    }
     if (a.limit_reached) chips.push('<span class="pill">Usage limit reached</span>')
     const r = a.resets
     let act = ""
