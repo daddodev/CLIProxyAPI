@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
@@ -551,6 +553,28 @@ func TestSelectorPick_AllCooldownReturnsModelCooldownError(t *testing.T) {
 			t.Fatalf("Error().error.provider = %q, want %q", got, "gemini")
 		}
 	})
+}
+
+func TestModelCooldownErrorRetainsAbsoluteDeadline(t *testing.T) {
+	before := time.Now()
+	err := newModelCooldownError("claude-opus-5-5", "claude", time.Minute)
+	after := time.Now()
+	if err.RetryAt().Before(before.Add(time.Minute)) || err.RetryAt().After(after.Add(time.Minute)) {
+		t.Fatalf("retry deadline %v is outside the construction interval", err.RetryAt())
+	}
+	deadline := err.RetryAt()
+	if first, second := err.Error(), err.Error(); first != second {
+		t.Fatalf("serializing the same cooldown changed its deadline: %s != %s", first, second)
+	}
+	if got := gjson.Get(err.Error(), "error.retry_at").String(); got != deadline.Format(time.RFC3339Nano) {
+		t.Fatalf("serialized retry_at = %q, want %q", got, deadline.Format(time.RFC3339Nano))
+	}
+	unnamed := newModelCooldownError("", "claude", time.Minute)
+	unnamed.retryAt = time.Date(2033, time.May, 19, 7, 20, 0, 0, time.UTC)
+	restored := restoreModelCooldownErrorModel(unnamed, "claude-opus-5-5")
+	if got := gjson.Get(restored.Error(), "error.retry_at").String(); got != unnamed.RetryAt().Format(time.RFC3339Nano) {
+		t.Fatalf("restoring the requested model changed retry_at: %s", restored)
+	}
 }
 
 func TestIsAuthBlockedForModel_UnavailableWithoutNextRetryIsBlocked(t *testing.T) {

@@ -83,6 +83,7 @@ const (
 type modelCooldownError struct {
 	model    string
 	resetIn  time.Duration
+	retryAt  time.Time
 	provider string
 	cause    error
 }
@@ -104,12 +105,21 @@ func newModelCooldownErrorWithCause(model, provider string, resetIn time.Duratio
 		model:    model,
 		provider: provider,
 		resetIn:  resetIn,
+		retryAt:  time.Now().Add(resetIn).UTC(),
 		cause:    cause,
 	}
 }
 
 func (e *modelCooldownError) IsModelCooldown() bool {
 	return true
+}
+
+// RetryAt retains the original recovery deadline when the error is serialized again.
+func (e *modelCooldownError) RetryAt() time.Time {
+	if e == nil || e.resetIn <= 0 {
+		return time.Time{}
+	}
+	return e.retryAt
 }
 
 func (e *modelCooldownError) Unwrap() error {
@@ -144,6 +154,9 @@ func (e *modelCooldownError) Error() string {
 		"model":         e.model,
 		"reset_time":    displayDuration.String(),
 		"reset_seconds": resetSeconds,
+	}
+	if retryAt := e.RetryAt(); !retryAt.IsZero() {
+		errorBody["retry_at"] = retryAt.Format(time.RFC3339Nano)
 	}
 	if e.provider != "" {
 		errorBody["provider"] = e.provider

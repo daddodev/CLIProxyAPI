@@ -287,6 +287,71 @@ func TestWriteClaudeErrorResponse_IncludesRetryAfterForModelCooldownDefaultSetti
 	}
 }
 
+func TestClaudeModelCooldownPreservesDeadlineAcrossJSONAndSSE(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cooldown := coreauth.NewModelCooldownError("claude-opus-5-5", "claude", 20*time.Second)
+	retryAt := gjson.Get(cooldown.Error(), "error.retry_at").String()
+	if _, errParse := time.Parse(time.RFC3339Nano, retryAt); errParse != nil {
+		t.Fatalf("invalid cooldown deadline %q: %v", retryAt, errParse)
+	}
+	for _, streaming := range []bool{false, true} {
+		name := "JSON"
+		if streaming {
+			name = "SSE"
+		}
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			handler := NewClaudeCodeAPIHandler(&handlers.BaseAPIHandler{})
+			msg := &interfaces.ErrorMessage{StatusCode: http.StatusTooManyRequests, Error: cooldown}
+			if streaming {
+				c.Header("Content-Type", "text/event-stream")
+				_, _ = c.Writer.Write([]byte("event: message_start\ndata: {}\n\n"))
+				c.Writer.Flush()
+				errs := make(chan *interfaces.ErrorMessage, 1)
+				errs <- msg
+				close(errs)
+				handler.forwardClaudeStream(c, c.Writer, func(error) {}, nil, errs)
+			} else {
+				handler.WriteErrorResponse(c, msg)
+				if recorder.Code != http.StatusTooManyRequests || recorder.Header().Get("Retry-After") != "20" {
+					t.Fatalf("unexpected cooldown HTTP response: status=%d headers=%v", recorder.Code, recorder.Header())
+				}
+			}
+			body := recorder.Body.String()
+			if streaming {
+				_, body, _ = strings.Cut(body, "event: error\ndata: ")
+				body = strings.TrimSpace(body)
+			}
+			if got := gjson.Get(body, "error.type").String(); got != "rate_limit_error" {
+				t.Fatalf("error.type = %q, want rate_limit_error", got)
+			}
+			if got := gjson.Get(body, "error.code").String(); got != "model_cooldown" {
+				t.Fatalf("error.code = %q, want model_cooldown", got)
+			}
+			if got := gjson.Get(body, "error.retry_at").String(); got != retryAt {
+				t.Fatalf("retry_at = %q, want original deadline %q", got, retryAt)
+			}
+			message := gjson.Get(body, "error.message").String()
+			if !strings.HasPrefix(message, "[CLIProxyAPI model_cooldown retry_at="+retryAt+"] ") || !strings.Contains(message, "All credentials for model claude-opus-5-5 are cooling down") {
+				t.Fatalf("SDK-compatible cooldown message = %q", message)
+			}
+		})
+	}
+}
+
+func TestClaudeModelCooldownWithoutDeadline(t *testing.T) {
+	handler := &ClaudeCodeAPIHandler{}
+	response := handler.toClaudeError(&interfaces.ErrorMessage{
+		StatusCode: http.StatusTooManyRequests,
+		Error:      coreauth.NewModelCooldownError("claude-opus-5-5", "claude", 0),
+	})
+	if response.Error.RetryAt != "" || !strings.HasPrefix(response.Error.Message, "[CLIProxyAPI model_cooldown] ") {
+		t.Fatalf("unexpected deadline for zero cooldown: %+v", response.Error)
+	}
+}
+
 func TestPendingClaudeStreamErrorUsesBufferedError(t *testing.T) {
 	wantErr := &interfaces.ErrorMessage{
 		StatusCode: http.StatusBadRequest,

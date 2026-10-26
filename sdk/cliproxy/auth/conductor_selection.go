@@ -713,7 +713,9 @@ func restoreModelCooldownErrorModel(err error, requestedModel string) error {
 	if !errors.As(err, &cooldownErr) || cooldownErr == nil || cooldownErr.model != "" {
 		return err
 	}
-	return newModelCooldownErrorWithCause(requestedModel, cooldownErr.provider, cooldownErr.resetIn, cooldownErr.cause)
+	restored := *cooldownErr
+	restored.model = requestedModel
+	return &restored
 }
 
 func latestUnauthorizedCandidateError(auths []*Auth) error {

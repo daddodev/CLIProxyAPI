@@ -520,6 +520,8 @@ func (h *ClaudeCodeAPIHandler) forwardClaudeStreamWithState(c *gin.Context, flus
 type claudeErrorDetail struct {
 	Type    string              `json:"type"`
 	Message string              `json:"message"`
+	Code    string              `json:"code,omitempty"`
+	RetryAt string              `json:"retry_at,omitempty"`
 	Details *claudeErrorDetails `json:"details,omitempty"`
 }
 
@@ -556,6 +558,22 @@ func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claud
 	}
 	if clienterror.IsClaudeThreadNotFound(status, errors.New(errText)) {
 		response.Error.Details = &claudeErrorDetails{ErrorCode: "thread_not_found"}
+	}
+	if status == http.StatusTooManyRequests && msg != nil {
+		var cooldown interface {
+			IsModelCooldown() bool
+			RetryAt() time.Time
+		}
+		if errors.As(msg.Error, &cooldown) && cooldown.IsModelCooldown() {
+			response.Error.Code = "model_cooldown"
+			marker := "[CLIProxyAPI model_cooldown"
+			if retryAt := cooldown.RetryAt(); !retryAt.IsZero() {
+				response.Error.RetryAt = retryAt.Format(time.RFC3339Nano)
+				marker += " retry_at=" + response.Error.RetryAt
+			}
+			// The Claude Agent SDK forwards the message but omits error metadata and headers.
+			response.Error.Message = marker + "] " + message
+		}
 	}
 	return response
 }
