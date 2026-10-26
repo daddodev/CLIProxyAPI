@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/usageupdates"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
@@ -197,6 +198,8 @@ func TestPluginRecordsCanonicalBreakdown(t *testing.T) {
 	})
 
 	at := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	updates, unsubscribe := usageupdates.Subscribe()
+	defer unsubscribe()
 	plugin{}.HandleUsage(context.Background(), coreusage.Record{
 		Provider:            "claude",
 		Model:               "claude-opus-4-5",
@@ -207,6 +210,11 @@ func TestPluginRecordsCanonicalBreakdown(t *testing.T) {
 			TokenBreakdown: coreusage.NewIndependentTokenBreakdown(100, 1000, 50, 200, 30, 1380),
 		},
 	})
+	select {
+	case <-updates:
+	default:
+		t.Fatal("recorded usage did not notify live dashboard subscribers")
+	}
 	store.flush()
 
 	var tier string

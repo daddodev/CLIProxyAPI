@@ -600,8 +600,6 @@ const GRANS = ["minute", "hour", "day", "month"]
 const MODES = ["model", "category"]
 const RANGE_LABEL = { minute: "Last 3 hours", hour: "Last 48 hours", day: "Last 30 days", month: "Last 12 months" }
 const BUCKETS = { minute: 180, hour: 48, day: 30, month: 12 }
-const LIMITS_INTERVAL = 15_000
-const historyInterval = () => (state.prefs.granularity === "minute" || state.prefs.granularity === "hour" ? 30_000 : 120_000)
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)")
 
 const $ = (sel, root = document) => root.querySelector(sel)
@@ -900,48 +898,115 @@ function addGran(d, gran) {
     return new Date(x.getFullYear(), x.getMonth() + 1, 1)
 }
 
-// ---------- Polling ----------
+// ---------- Live updates ----------
 
-const pollers = {
-    limits: { interval: () => LIMITS_INTERVAL, run: loadLimits, timer: 0, last: 0, busy: false },
-    history: { interval: historyInterval, run: loadHistory, timer: 0, last: 0, busy: false },
+const liveStream = { controller: null, timer: 0, connected: false, busy: false, retries: 0 }
+
+function stopLive() {
+    clearTimeout(liveStream.timer)
+    liveStream.controller?.abort()
+    liveStream.controller = null
+    liveStream.connected = liveStream.busy = false
 }
 
-function schedule(name, delay) {
-    const p = pollers[name]
-    clearTimeout(p.timer)
-    if (document.hidden || !state.key) return
-    p.timer = setTimeout(() => runPoller(name), delay ?? p.interval())
-}
-
-async function runPoller(name) {
-    const p = pollers[name]
-    clearTimeout(p.timer)
-    if (!state.key) return
-    p.last = Date.now()
-    p.busy = true
-    renderLive()
-    try { await p.run() } finally {
-        p.busy = false
-        renderLive()
-        schedule(name)
+// Fetch keeps the management key in the Authorization header. EventSource
+// cannot set this header and would require putting the credential in the URL.
+async function readUsageStream(body, onSnapshot) {
+    const reader = body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    try {
+        for (;;) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            let match
+            while ((match = /\r?\n\r?\n/.exec(buffer))) {
+                const frame = buffer.slice(0, match.index)
+                buffer = buffer.slice(match.index + match[0].length)
+                const lines = frame.split(/\r?\n/)
+                if (!lines.some((line) => line === "event: snapshot")) continue
+                const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).replace(/^ /, "")).join("\n")
+                if (data) onSnapshot(JSON.parse(data))
+            }
+            if (buffer.length > 8 * 1024 * 1024) throw new Error("Live update exceeded the maximum frame size")
+        }
+    } finally {
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
     }
 }
 
-function startPolling() {
-    runPoller("limits")
-    runPoller("history")
+function applyUsageSnapshot(snapshot, gran) {
+    if (snapshot.limits) {
+        state.limits = snapshot.limits
+        state.limitsAt = Date.now()
+    }
+    state.limitsErr = snapshot.limits_error || null
+    if (snapshot.history) {
+        state.history = snapshot.history
+        state.historyFor = gran
+        state.historyAt = Date.now()
+    }
+    state.historyErr = snapshot.history_error || null
+    $("#activity").classList.remove("loading")
+    renderAll()
+}
+
+function startLive() {
+    stopLive()
+    if (!state.key || document.hidden) return
+    const controller = new AbortController()
+    liveStream.controller = controller
+    liveStream.busy = true
+    renderLive()
+    const gran = state.prefs.granularity
+    if (DEMO) {
+        Promise.all([loadLimits(), loadHistory()]).then(() => {
+            if (controller.signal.aborted) return
+            liveStream.connected = true
+            liveStream.busy = false
+            renderLive()
+        })
+        return
+    }
+    $("#activity").classList.toggle("loading", state.historyFor !== gran)
+    const qs = new URLSearchParams({ granularity: gran, buckets: BUCKETS[gran], tz: TZ })
+    ;(async () => {
+        try {
+            const res = await fetch(`${API}/stream?${qs}`, {
+                headers: { Accept: "text/event-stream", Authorization: `Bearer ${state.key}` },
+                signal: controller.signal,
+                cache: "no-store",
+            })
+            if (controller.signal.aborted) return
+            if (res.status === 401) { forgetKey("The key was rejected. Enter it again."); return }
+            if (!res.ok || !res.headers.get("content-type")?.includes("text/event-stream")) throw new Error(`Live connection failed (HTTP ${res.status})`)
+            liveStream.connected = true
+            liveStream.busy = false
+            liveStream.retries = 0
+            renderLive()
+            await readUsageStream(res.body, (snapshot) => {
+                if (!controller.signal.aborted) applyUsageSnapshot(snapshot, gran)
+            })
+            throw new Error("Live connection closed; reconnecting")
+        } catch (err) {
+            if (controller.signal.aborted) return
+            liveStream.connected = liveStream.busy = false
+            state.limitsErr = err.message || "Live connection lost"
+            renderLive()
+            const delay = Math.min(30_000, 1000 * 2 ** Math.min(liveStream.retries++, 5))
+            liveStream.timer = setTimeout(startLive, delay)
+        }
+    })()
 }
 
 document.addEventListener("visibilitychange", () => {
-    for (const name of Object.keys(pollers)) {
-        const p = pollers[name]
-        if (document.hidden) { clearTimeout(p.timer); continue }
-        const due = p.last + p.interval() - Date.now()
-        if (due <= 0) runPoller(name)
-        else schedule(name, due)
-    }
+    if (document.hidden) stopLive()
+    else startLive()
 })
+window.addEventListener("pagehide", stopLive)
+window.addEventListener("pageshow", (event) => { if (event.persisted) startLive() })
 
 async function loadLimits() {
     try {
@@ -1100,7 +1165,7 @@ function paceAt(w, now = Date.now()) {
     return elapsed > 0 && elapsed < 1 ? elapsed * 100 : null
 }
 
-const SOURCE_LABEL = { probe: "live probe", headers: "from headers", none: "no data" }
+const SOURCE_LABEL = { probe: "idle refresh", headers: "from requests", cached: "cached usage", none: "no data" }
 
 function accountHtml(p, a, i) {
     const color = acctColor(p.provider, i)
@@ -1271,8 +1336,6 @@ async function redeem(id, creditId, requestId) {
     if (ui.outcome || DEFINITIVE_ERRORS.has(ui.code)) updatePending(id, null)
     state.resetUi.set(id, ui)
     await loadLimits()
-    pollers.limits.last = Date.now()
-    schedule("limits")
     const next = document.querySelector(`[data-focus="retry-${CSS.escape(id)}"]`) || document.querySelector(`[data-focus="dismiss-${CSS.escape(id)}"]`)
     next?.focus()
 }
@@ -1692,7 +1755,7 @@ $("#gran-ctl").addEventListener("change", (e) => {
     state.prefs.granularity = e.target.value
     savePrefs()
     setHover(null)
-    runPoller("history")
+    startLive()
 })
 $("#mode-ctl").addEventListener("change", (e) => {
     state.prefs.mode = e.target.value
@@ -1723,7 +1786,7 @@ function renderLive() {
     if (pricingAt) details.push(`Prices updated ${relTime(pricingAt)}`)
     if (state.limitsErr) details.push(`Last refresh failed: ${state.limitsErr}`)
     patch($("#live-details"), details.length ? details.map((text) => `<div>${esc(text)}</div>`).join("") : "Update details will appear once connected.")
-    const busy = pollers.limits.busy || pollers.history.busy
+    const busy = liveStream.busy
     $("#refresh").classList.toggle("is-busy", busy)
     if (!state.key) { live.dataset.state = "idle"; lbl.textContent = "Locked"; return }
     const at = state.limitsAt
@@ -1733,8 +1796,7 @@ function renderLive() {
         live.title = state.limitsErr || ""
         return
     }
-    const age = Date.now() - at
-    const stale = state.limitsErr || age > LIMITS_INTERVAL * 3
+    const stale = state.limitsErr || !liveStream.connected
     live.dataset.state = stale ? "stale" : "live"
     lbl.textContent = stale ? "Stale" : "Live"
     live.title = state.limitsErr ? `Last refresh failed: ${state.limitsErr}` : ""
@@ -1761,7 +1823,7 @@ document.addEventListener("keydown", (e) => {
     }
 })
 
-$("#refresh").addEventListener("click", () => { if (state.key) startPolling(); else openAuth() })
+$("#refresh").addEventListener("click", () => { if (state.key) startLive(); else openAuth() })
 
 // ---------- Auth ----------
 
@@ -1785,7 +1847,7 @@ function forgetKey(message) {
     state.limitsAt = state.historyAt = 0
     state.limitsErr = state.historyErr = null
     state.resetUi.clear()
-    for (const p of Object.values(pollers)) clearTimeout(p.timer)
+    stopLive()
     renderAll()
     openAuth(message)
 }
@@ -1798,7 +1860,7 @@ $("#auth-form").addEventListener("submit", (e) => {
     state.key = key
     authDialog.close()
     renderAll()
-    startPolling()
+    startLive()
 })
 $("#auth-cancel").addEventListener("click", () => authDialog.close())
 $("#signout").addEventListener("click", () => forgetKey())
@@ -1818,7 +1880,7 @@ if (DEMO) {
     $("#signout").hidden = true
 }
 renderAll()
-if (state.key) startPolling()
+if (state.key) startLive()
 else openAuth()
 
 // ---------- Demo data ----------

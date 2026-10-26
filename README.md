@@ -154,6 +154,9 @@ see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
 ## Usage Statistics
 
 This fork includes a persistent token and cost dashboard at `/usage.html`.
+It receives live updates over SSE and reuses Claude/Codex usage observations from
+normal requests. Separate provider reads run only after five idle minutes, with
+shared caching and increasing backoff when the usage endpoint is rate limited.
 To backfill older Codex and Claude Code sessions, use
 `cli-proxy-api usage-import --config config.yaml --dry-run`; see the
 [historical usage import guide](docs/usage-import.md).

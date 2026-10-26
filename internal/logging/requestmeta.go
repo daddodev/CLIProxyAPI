@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type endpointKey struct{}
 type responseStatusKey struct{}
 type responseHeadersKey struct{}
+type responseHeadersObserverKey struct{}
 type clientRequestMetadataKey struct{}
 
 // ClientRequestMetadata stores immutable downstream request metadata for asynchronous consumers.
@@ -30,8 +32,9 @@ type responseStatusHolder struct {
 }
 
 type responseHeadersHolder struct {
-	mu      sync.RWMutex
-	headers http.Header
+	mu         sync.RWMutex
+	headers    http.Header
+	observedAt time.Time
 }
 
 func WithEndpoint(ctx context.Context, endpoint string) context.Context {
@@ -101,6 +104,12 @@ func WithFreshResponseHeadersHolder(ctx context.Context) context.Context {
 	return context.WithValue(ctx, responseHeadersKey{}, &responseHeadersHolder{})
 }
 
+// WithResponseHeadersObserver observes headers as they arrive, including quota
+// metadata in long-running streams. The callback runs outside the holder lock.
+func WithResponseHeadersObserver(ctx context.Context, observe func(http.Header, time.Time)) context.Context {
+	return context.WithValue(ctx, responseHeadersObserverKey{}, observe)
+}
+
 func SetResponseStatus(ctx context.Context, status int) {
 	if ctx == nil || status <= 0 {
 		return
@@ -120,9 +129,19 @@ func SetResponseHeaders(ctx context.Context, headers http.Header) {
 	if !ok || holder == nil {
 		return
 	}
+	observe, _ := ctx.Value(responseHeadersObserverKey{}).(func(http.Header, time.Time))
 	holder.mu.Lock()
-	defer holder.mu.Unlock()
 	holder.headers = cloneHTTPHeader(headers)
+	holder.observedAt = time.Now()
+	observedAt := holder.observedAt
+	var snapshot http.Header
+	if observe != nil {
+		snapshot = cloneHTTPHeader(holder.headers)
+	}
+	holder.mu.Unlock()
+	if observe != nil {
+		observe(snapshot, observedAt)
+	}
 }
 
 // MergeResponseHeaders adds headers observed after the initial HTTP response,
@@ -135,8 +154,8 @@ func MergeResponseHeaders(ctx context.Context, headers http.Header) {
 	if !ok || holder == nil {
 		return
 	}
+	observe, _ := ctx.Value(responseHeadersObserverKey{}).(func(http.Header, time.Time))
 	holder.mu.Lock()
-	defer holder.mu.Unlock()
 	if holder.headers == nil {
 		holder.headers = make(http.Header, len(headers))
 	}
@@ -146,6 +165,16 @@ func MergeResponseHeaders(ctx context.Context, headers http.Header) {
 			continue
 		}
 		holder.headers[canonicalKey] = append([]string(nil), values...)
+	}
+	holder.observedAt = time.Now()
+	observedAt := holder.observedAt
+	var snapshot http.Header
+	if observe != nil {
+		snapshot = cloneHTTPHeader(holder.headers)
+	}
+	holder.mu.Unlock()
+	if observe != nil {
+		observe(snapshot, observedAt)
 	}
 }
 
@@ -182,4 +211,19 @@ func cloneHTTPHeader(src http.Header) http.Header {
 		dst[key] = append([]string(nil), values...)
 	}
 	return dst
+}
+
+// GetResponseHeadersObservedAt preserves arrival ordering when a long-running
+// request finishes after another request has already supplied newer quota data.
+func GetResponseHeadersObservedAt(ctx context.Context) time.Time {
+	if ctx == nil {
+		return time.Time{}
+	}
+	holder, _ := ctx.Value(responseHeadersKey{}).(*responseHeadersHolder)
+	if holder == nil {
+		return time.Time{}
+	}
+	holder.mu.RLock()
+	defer holder.mu.RUnlock()
+	return holder.observedAt
 }

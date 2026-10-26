@@ -1,8 +1,10 @@
 package management
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,49 +23,55 @@ var defaultHistoryRange = map[string]func(time.Time) time.Time{
 
 // GetUsageHistory returns token and cost history bucketed by minute, hour, day or month.
 func (h *Handler) GetUsageHistory(c *gin.Context) {
+	result, failure := h.usageHistorySnapshot(c.Request.Context(), c.Request.URL.Query(), time.Now())
+	if failure != nil {
+		writeUsageError(c, failure.status, failure.code, failure.message)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) usageHistorySnapshot(ctx context.Context, query url.Values, now time.Time) (*usagehistory.HistoryResult, *usageFailure) {
 	store := usagehistory.Current()
 	if store == nil {
-		writeUsageError(c, http.StatusServiceUnavailable, "history_disabled", "Usage history is disabled.")
-		return
+		return nil, &usageFailure{http.StatusServiceUnavailable, "history_disabled", "Usage history is disabled."}
 	}
 
-	granularity := strings.ToLower(strings.TrimSpace(c.DefaultQuery("granularity", usagehistory.GranularityHour)))
+	granularity := strings.ToLower(strings.TrimSpace(query.Get("granularity")))
+	if granularity == "" {
+		granularity = usagehistory.GranularityHour
+	}
 	lookback, ok := defaultHistoryRange[granularity]
 	if !ok {
-		writeUsageError(c, http.StatusBadRequest, "invalid_request", "granularity must be minute, hour, day or month.")
-		return
+		return nil, &usageFailure{http.StatusBadRequest, "invalid_request", "granularity must be minute, hour, day or month."}
 	}
 	loc := time.UTC
-	if tz := strings.TrimSpace(c.Query("tz")); tz != "" {
+	if tz := strings.TrimSpace(query.Get("tz")); tz != "" {
 		loaded, errLoad := time.LoadLocation(tz)
 		if errLoad != nil {
-			writeUsageError(c, http.StatusBadRequest, "invalid_request", "Unknown time zone.")
-			return
+			return nil, &usageFailure{http.StatusBadRequest, "invalid_request", "Unknown time zone."}
 		}
 		loc = loaded
 	}
-	now := time.Now()
 	to := now
-	if raw := strings.TrimSpace(c.Query("to")); raw != "" {
+	if raw := strings.TrimSpace(query.Get("to")); raw != "" {
 		parsed, errParse := time.Parse(time.RFC3339, raw)
 		if errParse != nil {
-			writeUsageError(c, http.StatusBadRequest, "invalid_request", "to must be an RFC3339 time.")
-			return
+			return nil, &usageFailure{http.StatusBadRequest, "invalid_request", "to must be an RFC3339 time."}
 		}
 		to = parsed
 	}
 	from := lookback(to)
-	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
+	if raw := strings.TrimSpace(query.Get("from")); raw != "" {
 		parsed, errParse := time.Parse(time.RFC3339, raw)
 		if errParse != nil {
-			writeUsageError(c, http.StatusBadRequest, "invalid_request", "from must be an RFC3339 time.")
-			return
+			return nil, &usageFailure{http.StatusBadRequest, "invalid_request", "from must be an RFC3339 time."}
 		}
 		from = parsed
 	}
 
 	rates, status, updatedAt := usagehistory.CurrentPricing().Snapshot()
-	result, errHistory := store.History(c.Request.Context(), usagehistory.HistoryQuery{
+	result, errHistory := store.History(ctx, usagehistory.HistoryQuery{
 		Granularity: granularity,
 		From:        from,
 		To:          to,
@@ -71,17 +79,15 @@ func (h *Handler) GetUsageHistory(c *gin.Context) {
 	}, rates)
 	if errHistory != nil {
 		if errors.Is(errHistory, usagehistory.ErrInvalidQuery) {
-			writeUsageError(c, http.StatusBadRequest, "invalid_request", errHistory.Error())
-			return
+			return nil, &usageFailure{http.StatusBadRequest, "invalid_request", errHistory.Error()}
 		}
 		log.WithError(errHistory).Error("usage history query failed")
-		writeUsageError(c, http.StatusInternalServerError, "history_failed", "Could not read usage history.")
-		return
+		return nil, &usageFailure{http.StatusInternalServerError, "history_failed", "Could not read usage history."}
 	}
 	result.Pricing.Status = status
 	if !updatedAt.IsZero() {
 		u := updatedAt.UTC()
 		result.Pricing.UpdatedAt = &u
 	}
-	c.JSON(http.StatusOK, result)
+	return result, nil
 }

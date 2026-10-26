@@ -98,6 +98,10 @@ retain the corresponding business operation's fields.
 | `/observability/logs/requests/<id>` | GET | Get a request log. |
 | `/observability/usage/api-keys` | GET | Get API-key usage. |
 | `/observability/usage/queue` | GET | Get queued usage events. |
+| `/observability/usage/limits` | GET | Get observed subscription usage and reset credits. |
+| `/observability/usage/limits/reset` | POST | Redeem a provider reset credit. |
+| `/observability/usage/history` | GET | Get persisted token and cost history. |
+| `/observability/usage/stream` | GET | Stream dashboard snapshots over SSE. |
 | `/credentials` | GET, POST, DELETE | List, upload, or delete credential files. |
 | `/credentials/models` | GET | Get credential models. |
 | `/credentials/download` | GET | Download a credential file. |
@@ -284,6 +288,31 @@ no reset time, a newer observation is needed to release it.
 legacy `quota_limit_percent`, and `limit_reached`. A threshold-blocked account
 has status `quota_limit` when it has no other status condition. `/usage.html`
 displays these fields alongside enabled/disabled state and upstream quota windows.
+
+The dashboard uses `GET /observability/usage/stream` with the management key in
+the `Authorization: Bearer ...` header. Each `snapshot` SSE event contains
+`limits` and `history` objects matching the corresponding GET responses. A
+section that cannot be read is null and has a `limits_error` or `history_error`
+message; disabled history does not prevent subscription updates. The stream
+accepts `granularity` (`minute`, `hour`, `day`, `month`), `tz` (an IANA time zone),
+and optional `buckets` (1–1000). Its history range advances in that time zone.
+Changes to usage observations and recorded tokens trigger snapshots, coalesced
+over 250 ms. A snapshot every 30 seconds keeps idle streams alive and advances
+idle refresh deadlines and chart windows. Clients reconnect for a fresh snapshot
+after disconnection; there is no event replay requirement.
+
+Subscription usage comes primarily from ordinary inference response headers and
+Codex quota events, including observations received before a stream completes.
+Only accounts with no activity or usage observations for five minutes make a
+separate provider read. An account with no observations can be read immediately;
+a reset also invalidates pre-reset data. All dashboard clients share each
+account's read and five-minute cache. `refresh=1` cannot bypass these intervals
+or provider backoff. A usage-read HTTP 429 waits at least five minutes, then
+10, 20, and at most 30 minutes after repeated failures; a longer `Retry-After`
+deadline takes precedence. A successful read resets this backoff. These read
+limits do not put inference credentials into cooldown. Plan details and reset
+credits absent from normal responses remain unknown until an idle read supplies
+them; expired cached credit counts are not offered for redemption.
 
 The management frontend source lives in the separate
 [management-center repository](https://github.com/router-for-me/Cli-Proxy-API-Management-Center).
