@@ -95,6 +95,8 @@ type Auth struct {
 	CreatedAt time.Time `json:"created_at"`
 	// UpdatedAt is the last modification timestamp in UTC.
 	UpdatedAt time.Time `json:"updated_at"`
+	// LastRequestAt is runtime activity used to avoid separate usage reads while busy.
+	LastRequestAt time.Time `json:"-"`
 	// LastRefreshedAt records the last successful refresh time in UTC.
 	LastRefreshedAt time.Time `json:"last_refreshed_at"`
 	// NextRefreshAfter is the earliest time a refresh should retrigger.

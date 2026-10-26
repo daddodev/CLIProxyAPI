@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -12,6 +13,68 @@ import (
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	coresession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
 )
+
+func TestQuotaHeadersAreObservedBeforeExecutionFinishes(t *testing.T) {
+	manager := NewManager(nil, nil, nil)
+	auth, errRegister := manager.Register(context.Background(), &Auth{ID: "live-quota", Provider: "codex"})
+	if errRegister != nil {
+		t.Fatal(errRegister)
+	}
+	ctx := manager.newUpstreamAttemptContext(context.Background(), auth)
+	internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Plan-Type": {"pro"}})
+	internallogging.MergeResponseHeaders(ctx, http.Header{
+		"X-Codex-Primary-Used-Percent": {"42"}, "X-Codex-Primary-Window-Minutes": {"300"},
+	})
+	current, _ := manager.GetByID(auth.ID)
+	if current.Quota.Signals["X-Codex-Primary-Used-Percent"] != "42" || current.Quota.ObservedAt.IsZero() {
+		t.Fatalf("stream event was not observed before MarkResult: %+v", current.Quota)
+	}
+	if current.Success != 0 || !current.LastRequestAt.IsZero() {
+		t.Fatal("passive observation must not count an unfinished request")
+	}
+	// An attempt inherited from a different provider must not retain this
+	// credential's observer, even when contexts are nested during failover.
+	other := manager.newUpstreamAttemptContext(ctx, &Auth{ID: "other", Provider: "openai"})
+	internallogging.SetResponseHeaders(other, http.Header{"X-Codex-Primary-Used-Percent": {"99"}})
+	current, _ = manager.GetByID(auth.ID)
+	if current.Quota.Signals["X-Codex-Primary-Used-Percent"] != "42" {
+		t.Fatal("an observer leaked across provider attempts")
+	}
+	manager.ObserveQuotaHeaders(auth.ID, auth.RegistrationEpoch, http.Header{
+		"X-Codex-Primary-Used-Percent": {"60"}, "X-Codex-Primary-Window-Minutes": {"300"},
+	}, time.Now().Add(time.Second))
+	manager.MarkResult(ctx, Result{AuthID: auth.ID, Provider: "codex", Success: true})
+	current, _ = manager.GetByID(auth.ID)
+	if current.Quota.Signals["X-Codex-Primary-Used-Percent"] != "60" {
+		t.Fatal("a late request completion overwrote newer quota data")
+	}
+	if current.LastRequestAt.IsZero() || current.LastRequestAt.Before(time.Now().Add(-time.Minute)) {
+		t.Fatal("completed request did not record recent activity")
+	}
+}
+
+func TestQuotaObserverIgnoresCountTokensAndRetiredCredentials(t *testing.T) {
+	manager := NewManager(nil, nil, nil)
+	auth, errRegister := manager.Register(context.Background(), &Auth{ID: "quota-version", Provider: "codex", CredentialVersion: 1})
+	if errRegister != nil {
+		t.Fatal(errRegister)
+	}
+	ctx := manager.newUpstreamAttemptContext(context.Background(), auth)
+	countCtx := newUpstreamAttemptContext(ctx)
+	internallogging.SetResponseHeaders(countCtx, http.Header{"X-Codex-Primary-Used-Percent": {"99"}})
+	current, _ := manager.GetByID(auth.ID)
+	if len(current.Quota.Signals) != 0 {
+		t.Fatal("count-tokens inherited a generation quota observer")
+	}
+	manager.mu.Lock()
+	manager.auths[auth.ID].CredentialVersion++
+	manager.mu.Unlock()
+	internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Primary-Used-Percent": {"99"}})
+	current, _ = manager.GetByID(auth.ID)
+	if len(current.Quota.Signals) != 0 {
+		t.Fatal("an old credential version overwrote quota data")
+	}
+}
 
 type quotaAttemptIsolationSelector struct{}
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/usageupdates"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 	log "github.com/sirupsen/logrus"
@@ -67,6 +68,7 @@ func (plugin) HandleUsage(_ context.Context, record coreusage.Record) {
 		counters.Failed = 1
 	}
 	store.add(at, provider, model, strings.TrimSpace(record.AuthIndex), normalizeTier(record), counters)
+	usageupdates.Notify()
 }
 
 // normalizeTier maps the billed service tier onto the pricing tiers.

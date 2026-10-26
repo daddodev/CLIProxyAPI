@@ -237,7 +237,7 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 	var upstreamErr error
 	didRefreshOnUnauthorized := false
 	for idx, execModel := range execModels {
-		ctx = newUpstreamAttemptContext(ctx)
+		ctx = m.newUpstreamAttemptContext(ctx, auth)
 		resultModel := m.stateModelForExecution(auth, routeModel, execModel, pooled)
 		execReq := req
 		execReq.Model = execModel
@@ -276,12 +276,12 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 			}
 			if allowRetry && !ephemeralResult {
 				alreadyTried := didRefreshOnUnauthorized
-				refreshed, okRefresh := m.tryRefreshAfterUnauthorized(newUpstreamAttemptContext(ctx), auth, errStream, alreadyTried, execOpts.Headers)
+				refreshed, okRefresh := m.tryRefreshAfterUnauthorized(m.newUpstreamAttemptContext(ctx, auth), auth, errStream, alreadyTried, execOpts.Headers)
 				if okRefresh {
 					auth = refreshed
 					publishSelectedAuthMetadata(execOpts.Metadata, auth)
 					didRefreshOnUnauthorized = true
-					ctx = newUpstreamAttemptContext(ctx)
+					ctx = m.newUpstreamAttemptContext(ctx, auth)
 					ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
 					executionSeq = m.nextExecutionSeq()
 					startRetry := time.Now()
@@ -355,13 +355,13 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 			}
 			if allowRetry && !ephemeralResult {
 				alreadyTried := didRefreshOnUnauthorized
-				refreshed, okRefresh := m.tryRefreshAfterUnauthorized(newUpstreamAttemptContext(ctx), auth, bootstrapErr, alreadyTried, execOpts.Headers)
+				refreshed, okRefresh := m.tryRefreshAfterUnauthorized(m.newUpstreamAttemptContext(ctx, auth), auth, bootstrapErr, alreadyTried, execOpts.Headers)
 				if okRefresh {
 					discardStreamChunks(streamResult.Chunks)
 					auth = refreshed
 					publishSelectedAuthMetadata(execOpts.Metadata, auth)
 					didRefreshOnUnauthorized = true
-					ctx = newUpstreamAttemptContext(ctx)
+					ctx = m.newUpstreamAttemptContext(ctx, auth)
 					executionSeq = m.nextExecutionSeq()
 					startRetry := time.Now()
 					retryStream, retryErr := executor.ExecuteStream(ctx, auth, execReq, execOpts)

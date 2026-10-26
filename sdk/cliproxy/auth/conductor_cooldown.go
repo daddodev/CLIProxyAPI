@@ -20,6 +20,7 @@ import (
 	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/usageupdates"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
 
@@ -933,6 +934,9 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			cooldownRecordsBefore = m.cooldownStateRecordsForAuthLocked(auth, now)
 		}
 		auth.recordRecentRequest(now, result.Success)
+		if !result.SkipQuotaObservation {
+			auth.LastRequestAt = now
+		}
 		if result.Success {
 			auth.Success++
 		} else {
@@ -1332,9 +1336,15 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 		auth.UpdatedAt = now
 
 		if !result.SkipQuotaObservation {
-			auth.Quota.ObserveResponseHeadersForProvider(result.Provider, responseHeaders, now)
-			if modelState != nil {
-				modelState.Quota.ObserveResponseHeadersForProvider(result.Provider, responseHeaders, now)
+			observedAt := internallogging.GetResponseHeadersObservedAt(ctx)
+			if observedAt.IsZero() {
+				observedAt = now
+			}
+			if !auth.Quota.ObservedAt.After(observedAt) {
+				auth.Quota.ObserveResponseHeadersForProvider(result.Provider, responseHeaders, observedAt)
+			}
+			if modelState != nil && !modelState.Quota.ObservedAt.After(observedAt) {
+				modelState.Quota.ObserveResponseHeadersForProvider(result.Provider, responseHeaders, observedAt)
 			}
 		}
 
@@ -1347,6 +1357,9 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	}
 	m.mu.Unlock()
 	releaseMutation()
+	if authSnapshot != nil {
+		usageupdates.Notify()
+	}
 	if m.scheduler != nil && authSnapshot != nil {
 		credentialScopedResult := result.CredentialScope || scheduleUnauthorizedRefresh || HasQuotaLimits(authSnapshot)
 		var targetModels []string

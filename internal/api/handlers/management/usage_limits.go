@@ -18,10 +18,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/usageupdates"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -32,10 +34,12 @@ const (
 	codexUsageURL        = "https://chatgpt.com/backend-api/wham/usage"
 	codexCreditsURL      = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 
-	usageLimitsTTL        = 60 * time.Second
-	usageLimitsErrorTTL   = 30 * time.Second
-	usageLimitsMinRefresh = 10 * time.Second
-	usageLimitsWorkers    = 4
+	usageLimitsTTL          = 5 * time.Minute
+	usageLimitsErrorTTL     = 5 * time.Minute
+	usageLimitsRateLimitTTL = 5 * time.Minute
+	usageLimitsMaxBackoff   = 30 * time.Minute
+	usageLimitsMinRefresh   = 5 * time.Minute
+	usageLimitsWorkers      = 4
 
 	windowFiveHour = "five_hour"
 	windowWeekly   = "weekly"
@@ -110,9 +114,14 @@ type usageProbe struct {
 	windows []usageWindow
 	resets  *usageResets
 	err     string
+	// A provider usage-read limit is separate from inference cooldowns. Even a
+	// forced dashboard refresh must wait until this deadline.
+	retryAt time.Time
+	backoff time.Duration
 }
 
 type usageLimitsCache struct {
+	probes  singleflight.Group
 	mu      sync.Mutex
 	entries map[string]*usageProbe
 	// generations advance on invalidate so a probe started before a reset
@@ -126,6 +135,9 @@ func (c *usageLimitsCache) get(authIndex string, now time.Time, force bool) (*us
 	entry := c.entries[authIndex]
 	if entry == nil {
 		return nil, false
+	}
+	if !entry.retryAt.IsZero() {
+		return entry, now.Before(entry.retryAt)
 	}
 	age := now.Sub(entry.at)
 	ttl := usageLimitsTTL
@@ -154,13 +166,26 @@ func (c *usageLimitsCache) put(authIndex string, generation uint64, probe *usage
 	if c.entries == nil {
 		c.entries = make(map[string]*usageProbe)
 	}
+	if !probe.retryAt.IsZero() {
+		probe.backoff = usageLimitsRateLimitTTL
+		if previous := c.entries[authIndex]; previous != nil && previous.backoff > 0 {
+			probe.backoff = min(previous.backoff*2, usageLimitsMaxBackoff)
+		}
+		if earliest := probe.at.Add(probe.backoff); probe.retryAt.Before(earliest) {
+			probe.retryAt = earliest
+		}
+	}
 	c.entries[authIndex] = probe
 }
 
 func (c *usageLimitsCache) invalidate(authIndex string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.entries, authIndex)
+	// Resetting generation state does not remove a usage-endpoint rate limit.
+	// A user retrying a reset must not accidentally bypass read backoff.
+	if entry := c.entries[authIndex]; entry == nil || entry.retryAt.IsZero() {
+		delete(c.entries, authIndex)
+	}
 	if c.generations == nil {
 		c.generations = make(map[string]uint64)
 	}
@@ -195,15 +220,22 @@ func usageOAuthToken(auth *coreauth.Auth) string {
 
 // GetUsageLimits reports subscription windows and reset credits for Claude and Codex accounts.
 func (h *Handler) GetUsageLimits(c *gin.Context) {
-	h.mu.Lock()
-	manager := h.authManager
-	h.mu.Unlock()
-	if manager == nil {
-		writeUsageError(c, http.StatusServiceUnavailable, "unavailable", "core auth manager unavailable")
+	result, errSnapshot := h.usageLimitsSnapshot(c.Request.Context(), time.Now(), c.Query("refresh") == "1")
+	if errSnapshot != nil {
+		writeUsageError(c, http.StatusServiceUnavailable, "unavailable", errSnapshot.Error())
 		return
 	}
-	force := c.Query("refresh") == "1"
-	now := time.Now()
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) usageLimitsSnapshot(ctx context.Context, now time.Time, force bool) (gin.H, error) {
+	h.mu.Lock()
+	manager := h.authManager
+	strategy := h.cfg.Routing.Strategy
+	h.mu.Unlock()
+	if manager == nil {
+		return nil, fmt.Errorf("core auth manager unavailable")
+	}
 
 	var auths []*coreauth.Auth
 	for _, auth := range manager.List() {
@@ -221,7 +253,7 @@ func (h *Handler) GetUsageLimits(c *gin.Context) {
 	})
 
 	accounts := make([]usageAccount, len(auths))
-	group, ctx := errgroup.WithContext(c.Request.Context())
+	group, ctx := errgroup.WithContext(ctx)
 	group.SetLimit(usageLimitsWorkers)
 	for i, auth := range auths {
 		group.Go(func() error {
@@ -252,7 +284,7 @@ func (h *Handler) GetUsageLimits(c *gin.Context) {
 		}
 		providers = append(providers, entry)
 	}
-	c.JSON(http.StatusOK, gin.H{"checked_at": now.UTC(), "providers": providers, "routing_strategy": h.cfg.Routing.Strategy})
+	return gin.H{"checked_at": now.UTC(), "providers": providers, "routing_strategy": strategy}, nil
 }
 
 func usageProviderLabel(provider string) string {
@@ -313,24 +345,57 @@ func (h *Handler) usageAccountFor(ctx context.Context, auth *coreauth.Auth, now 
 		account.Status = "disabled"
 	}
 
-	var probe *usageProbe
-	if !auth.Disabled {
-		cached, fresh := h.usageLimits.get(auth.Index, now, force)
-		probe = cached
-		if !fresh {
-			generation := h.usageLimits.generation(auth.Index)
-			probe = h.probeUsage(ctx, auth)
-			h.usageLimits.put(auth.Index, generation, probe)
+	windows := usageWindowsFromSignals(auth.Provider, auth.Quota, now)
+	probe, fresh := h.usageLimits.get(auth.Index, now, force)
+	lastActivity := auth.LastRequestAt
+	if auth.Quota.ObservedAt.After(lastActivity) {
+		lastActivity = auth.Quota.ObservedAt
+	}
+	// Ordinary inference traffic is the primary source. A dashboard client may
+	// only make a separate read after five idle minutes, shared by every tab.
+	idle := lastActivity.IsZero() || !now.Before(lastActivity.Add(usageLimitsTTL))
+	// A reset invalidates pre-reset usage even if inference was recently active.
+	resetRefresh := probe == nil && h.usageLimits.generation(auth.Index) > 0
+	if !auth.Disabled && !fresh && (idle || resetRefresh) {
+		probe = h.cachedUsageProbe(ctx, auth, now, force)
+	}
+	if auth.Disabled {
+		probe = nil
+	}
+	if len(windows) > 0 && (probe == nil || probe.err != "" || auth.Quota.ObservedAt.After(probe.at)) {
+		account.Source = "headers"
+		observed := auth.Quota.ObservedAt.UTC()
+		account.ObservedAt = &observed
+		account.Windows = windows
+		account.Plan = usageMetadataString(auth, "subscription_type")
+		if strings.EqualFold(auth.Provider, "codex") {
+			for name, value := range auth.Quota.Signals {
+				if strings.EqualFold(name, "X-Codex-Plan-Type") {
+					account.Plan = codexPlanLabel(value)
+				}
+			}
 		}
+		if (idle || resetRefresh) && probe != nil {
+			account.Error = probe.err
+		}
+		if probe != nil && fresh {
+			account.Resets = probe.resets
+		}
+		return account
 	}
 
 	if probe != nil && probe.err == "" {
 		account.Source = "probe"
+		if !now.Before(probe.at.Add(usageLimitsTTL)) {
+			account.Source = "cached"
+		}
 		observed := probe.at.UTC()
 		account.ObservedAt = &observed
 		account.Plan = probe.plan
 		account.Windows = expireUsageWindows(probe.windows, now)
-		account.Resets = probe.resets
+		if now.Before(probe.at.Add(usageLimitsTTL)) {
+			account.Resets = probe.resets
+		}
 		return account
 	}
 	if probe != nil {
@@ -339,7 +404,7 @@ func (h *Handler) usageAccountFor(ctx context.Context, auth *coreauth.Auth, now 
 			account.Resets = probe.resets
 		}
 	}
-	if windows := usageWindowsFromSignals(auth.Provider, auth.Quota, now); len(windows) > 0 {
+	if len(windows) > 0 {
 		account.Source = "headers"
 		observed := auth.Quota.ObservedAt.UTC()
 		account.ObservedAt = &observed
@@ -348,6 +413,29 @@ func (h *Handler) usageAccountFor(ctx context.Context, auth *coreauth.Auth, now 
 		account.Status = "error"
 	}
 	return account
+}
+
+// cachedUsageProbe shares cache misses between SSE clients and manual reads.
+// Generation keys prevent a reset from joining a probe started before it.
+func (h *Handler) cachedUsageProbe(ctx context.Context, auth *coreauth.Auth, now time.Time, force bool) *usageProbe {
+	generation := h.usageLimits.generation(auth.Index)
+	key := fmt.Sprintf("%s:%d", auth.Index, generation)
+	result := h.usageLimits.probes.DoChan(key, func() (any, error) {
+		if probe, fresh := h.usageLimits.get(auth.Index, now, force); fresh {
+			return probe, nil
+		}
+		// The management call has its own allowed timeout. One disconnected
+		// dashboard must not cancel a read shared with other subscribers.
+		probe := h.probeUsage(context.WithoutCancel(ctx), auth)
+		h.usageLimits.put(auth.Index, generation, probe)
+		return probe, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil
+	case completed := <-result:
+		return completed.Val.(*usageProbe)
+	}
 }
 
 func usageCooldownUntil(auth *coreauth.Auth, now time.Time) *time.Time {
@@ -539,6 +627,7 @@ func usageWindowsFromSignals(provider string, quota coreauth.QuotaState, now tim
 type usageUpstreamResponse struct {
 	status int
 	body   []byte
+	header http.Header
 }
 
 // usageUpstreamCall sends an authenticated request with the account's token
@@ -595,7 +684,7 @@ func (h *Handler) usageUpstreamCall(ctx context.Context, auth *coreauth.Auth, me
 	if errRead != nil {
 		return usageUpstreamResponse{}, errRead
 	}
-	return usageUpstreamResponse{status: resp.StatusCode, body: data}, nil
+	return usageUpstreamResponse{status: resp.StatusCode, body: data, header: resp.Header}, nil
 }
 
 var errUsageSignedOut = fmt.Errorf("account token unavailable; sign in again")
@@ -619,14 +708,34 @@ func (h *Handler) probeUsage(ctx context.Context, auth *coreauth.Auth) *usagePro
 	case "codex":
 		errProbe = h.probeCodexUsage(ctx, auth, probe)
 	}
+	probe.at = time.Now()
 	if errProbe != nil {
 		log.WithFields(log.Fields{"provider": auth.Provider, "auth_index": auth.Index}).WithError(errProbe).Debug("usage limits probe failed")
 		probe.err = usageProbeMessage(errProbe)
+		if statusErr, ok := errProbe.(usageStatusError); ok && statusErr.status == http.StatusTooManyRequests {
+			probe.retryAt = usageRateLimitRetryAt(statusErr.retryAfter, probe.at)
+		}
 	}
 	return probe
 }
 
-type usageStatusError struct{ status int }
+type usageStatusError struct {
+	status     int
+	retryAfter string
+}
+
+// usageRateLimitRetryAt honors Retry-After without letting dashboard refreshes
+// repeatedly hit a throttled endpoint when the provider omits a usable deadline.
+func usageRateLimitRetryAt(raw string, now time.Time) time.Time {
+	raw = strings.TrimSpace(raw)
+	if seconds, errParse := strconv.ParseInt(raw, 10, 64); errParse == nil && seconds > 0 && seconds <= int64((1<<63-1)/time.Second) {
+		return now.Add(time.Duration(seconds) * time.Second)
+	}
+	if retryAt, errParse := http.ParseTime(raw); errParse == nil && retryAt.After(now) {
+		return retryAt
+	}
+	return now.Add(usageLimitsRateLimitTTL)
+}
 
 func (e usageStatusError) Error() string { return fmt.Sprintf("upstream returned HTTP %d", e.status) }
 
@@ -652,7 +761,7 @@ func (h *Handler) probeClaudeUsage(ctx context.Context, auth *coreauth.Auth, pro
 		return errCall
 	}
 	if resp.status < 200 || resp.status >= 300 {
-		return usageStatusError{resp.status}
+		return usageStatusError{status: resp.status, retryAfter: resp.header.Get("Retry-After")}
 	}
 	if !gjson.ValidBytes(resp.body) {
 		return fmt.Errorf("invalid usage response")
@@ -737,7 +846,7 @@ func (h *Handler) probeCodexUsage(ctx context.Context, auth *coreauth.Auth, prob
 		return errCall
 	}
 	if resp.status < 200 || resp.status >= 300 {
-		return usageStatusError{resp.status}
+		return usageStatusError{status: resp.status, retryAfter: resp.header.Get("Retry-After")}
 	}
 	if !gjson.ValidBytes(resp.body) {
 		return fmt.Errorf("invalid usage response")
@@ -854,7 +963,10 @@ func (h *Handler) PostUsageLimitsReset(c *gin.Context) {
 	default:
 		outcome, status, code, message = h.redeemCodexReset(c.Request.Context(), auth, creditID)
 	}
-	h.usageLimits.invalidate(auth.Index)
+	if code == "" || code == "unconfirmed" {
+		h.usageLimits.invalidate(auth.Index)
+		defer usageupdates.Notify()
+	}
 	if code != "" {
 		writeUsageError(c, status, code, message)
 		return

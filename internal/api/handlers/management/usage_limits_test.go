@@ -202,7 +202,7 @@ func TestGetUsageLimitsCombinesProbedAccounts(t *testing.T) {
 }
 
 func TestGetUsageLimitsFallsBackToHeaderSignals(t *testing.T) {
-	observed := time.Now().Add(-time.Minute)
+	observed := time.Now().Add(-10 * time.Minute)
 	reset := time.Now().Add(90 * time.Minute).Unix()
 	expired := time.Now().Add(-time.Minute).Unix()
 	auth := claudeTestAuth("claude-a", "a@example.com")
@@ -225,6 +225,84 @@ func TestGetUsageLimitsFallsBackToHeaderSignals(t *testing.T) {
 	}
 	if account.Windows[1].UsedPercent != 0 || account.Windows[1].ResetsAt != nil {
 		t.Fatalf("an elapsed window should read as reset: %+v", account.Windows[1])
+	}
+}
+
+func TestUsageLimitsPreferRequestsUntilIdle(t *testing.T) {
+	now := time.Now()
+	for _, provider := range []string{"claude", "codex"} {
+		t.Run(provider, func(t *testing.T) {
+			auth := claudeTestAuth("live", "live@example.com")
+			headers := http.Header{
+				"Anthropic-Ratelimit-Unified-5h-Utilization": {"0.42"},
+				"Anthropic-Ratelimit-Unified-5h-Reset":       {strconv.FormatInt(now.Add(time.Hour).Unix(), 10)},
+			}
+			if provider == "codex" {
+				auth = codexTestAuth("live", "live@example.com")
+				headers = http.Header{
+					"X-Codex-Primary-Used-Percent":   {"42"},
+					"X-Codex-Primary-Window-Minutes": {"300"},
+					"X-Codex-Primary-Reset-At":       {strconv.FormatInt(now.Add(time.Hour).Unix(), 10)},
+				}
+			}
+			auth.Quota.ObserveResponseHeadersForProvider(provider, headers, now)
+			h, recorded := newUsageTestHandler(t, []*coreauth.Auth{auth}, func(*http.Request, []byte) *http.Response {
+				return usageJSONResponse(http.StatusTooManyRequests, `{}`)
+			})
+			current, _ := h.authManager.GetByID(auth.ID)
+			current.EnsureIndex()
+			// A stale probe with a conflicting value must not mask live traffic.
+			h.usageLimits.put(current.Index, 0, &usageProbe{at: now.Add(-time.Minute), windows: []usageWindow{{UsedPercent: 90}}})
+			for _, force := range []bool{false, true} {
+				account := h.usageAccountFor(context.Background(), current, now, force)
+				if account.Source != "headers" || account.Windows[0].UsedPercent != 42 || len(*recorded) != 0 {
+					t.Fatalf("force=%v: live observation did not win: %+v, calls=%d", force, account, len(*recorded))
+				}
+			}
+			// A request with no quota headers still prevents an extra usage read.
+			current.LastRequestAt = now.Add(4 * time.Minute)
+			h.usageAccountFor(context.Background(), current, now.Add(6*time.Minute), false)
+			if len(*recorded) != 0 {
+				t.Fatal("active credential triggered a standalone usage read")
+			}
+			h.usageAccountFor(context.Background(), current, now.Add(9*time.Minute), false)
+			if len(*recorded) != 1 {
+				t.Fatalf("idle credential made %d usage reads, want 1", len(*recorded))
+			}
+		})
+	}
+}
+
+func TestUsageProbeSharedReadSurvivesCanceledSubscriber(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	h, recorded := newUsageTestHandler(t, []*coreauth.Auth{claudeTestAuth("shared", "test@example.com")}, func(req *http.Request, _ []byte) *http.Response {
+		close(started)
+		<-release
+		if req.Context().Err() != nil {
+			t.Error("a subscriber canceled the shared provider read")
+		}
+		return usageJSONResponse(http.StatusOK, `{"five_hour":{"utilization":25}}`)
+	})
+	auth, _ := h.authManager.GetByID("shared")
+	auth.EnsureIndex()
+	now := time.Now()
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	defer cancelFirst()
+	first := make(chan *usageProbe, 1)
+	go func() { first <- h.cachedUsageProbe(firstCtx, auth, now, false) }()
+	<-started
+	cancelFirst()
+	if probe := <-first; probe != nil {
+		t.Fatal("canceled subscriber must return without waiting for the provider")
+	}
+	// A canceled waiter still joins the existing read rather than creating one.
+	if probe := h.cachedUsageProbe(firstCtx, auth, now, false); probe != nil {
+		t.Fatal("canceled subscriber returned a probe")
+	}
+	close(release)
+	probe := h.cachedUsageProbe(context.Background(), auth, now, false)
+	if probe.err != "" || len(probe.windows) != 1 || len(*recorded) != 1 {
+		t.Fatalf("expected one successful shared read: probe=%+v calls=%d", probe, len(*recorded))
 	}
 }
 
@@ -383,5 +461,131 @@ func TestUsageLimitsCacheIgnoresProbeStartedBeforeInvalidation(t *testing.T) {
 	cache.put("a1", cache.generation("a1"), &usageProbe{at: time.Now()})
 	if _, fresh := cache.get("a1", time.Now(), false); !fresh {
 		t.Fatal("a probe started after invalidation should be cached")
+	}
+}
+
+func TestUsageRateLimitRetryAt(t *testing.T) {
+	now := time.Date(2026, time.October, 26, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, header string
+		wait         time.Duration
+	}{
+		{"seconds", "900", 15 * time.Minute},
+		{"short provider deadline", "10", 10 * time.Second},
+		{"whitespace", " 900 ", 15 * time.Minute},
+		{"HTTP date", now.Add(time.Hour).Format(http.TimeFormat), time.Hour},
+		{"missing", "", usageLimitsRateLimitTTL},
+		{"invalid", "later", usageLimitsRateLimitTTL},
+		{"zero", "0", usageLimitsRateLimitTTL},
+		{"negative", "-1", usageLimitsRateLimitTTL},
+		{"past date", now.Add(-time.Hour).Format(http.TimeFormat), usageLimitsRateLimitTTL},
+		{"duration overflow", "9223372036854775807", usageLimitsRateLimitTTL},
+		{"integer overflow", "9223372036854775808", usageLimitsRateLimitTTL},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := usageRateLimitRetryAt(tc.header, now); !got.Equal(now.Add(tc.wait)) {
+				t.Fatalf("retry deadline = %v, want %v", got, now.Add(tc.wait))
+			}
+		})
+	}
+}
+
+func TestUsageLimitsRateLimitBackoffIncreasesAndResets(t *testing.T) {
+	var cache usageLimitsCache
+	now := time.Date(2026, time.October, 26, 12, 0, 0, 0, time.UTC)
+	for _, wait := range []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 30 * time.Minute, 30 * time.Minute} {
+		probe := &usageProbe{at: now, err: "rate limited", retryAt: now.Add(time.Second)}
+		cache.put("account", 0, probe)
+		if !probe.retryAt.Equal(now.Add(wait)) {
+			t.Fatalf("retry wait = %v, want %v", probe.retryAt.Sub(now), wait)
+		}
+		now = probe.retryAt
+	}
+	cache.put("account", 0, &usageProbe{at: now})
+	probe := &usageProbe{at: now, err: "rate limited", retryAt: now.Add(time.Hour)}
+	cache.put("account", 0, probe)
+	if probe.backoff != 5*time.Minute || !probe.retryAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("success must reset backoff and preserve longer Retry-After: %+v", probe)
+	}
+}
+
+func TestUsageLimitsResetRefreshesDataWithoutBypassingReadBackoff(t *testing.T) {
+	now := time.Now()
+	auth := claudeTestAuth("reset-cache", "test@example.com")
+	auth.Quota.ObserveResponseHeadersForProvider("claude", http.Header{
+		"Anthropic-Ratelimit-Unified-5h-Utilization": {"0.9"},
+	}, now)
+	h, recorded := newUsageTestHandler(t, []*coreauth.Auth{auth}, func(*http.Request, []byte) *http.Response {
+		return usageJSONResponse(http.StatusOK, `{"five_hour":{"utilization":0}}`)
+	})
+	current, _ := h.authManager.GetByID(auth.ID)
+	current.EnsureIndex()
+	h.usageLimits.invalidate(current.Index)
+	account := h.usageAccountFor(context.Background(), current, now, false)
+	if account.Source != "probe" || account.Windows[0].UsedPercent != 0 || len(*recorded) != 1 {
+		t.Fatalf("pre-reset observations masked refreshed usage: %+v calls=%d", account, len(*recorded))
+	}
+	limited := &usageProbe{at: now, err: "rate limited", retryAt: now.Add(time.Hour)}
+	h.usageLimits.put(current.Index, h.usageLimits.generation(current.Index), limited)
+	h.usageLimits.invalidate(current.Index)
+	if got, fresh := h.usageLimits.get(current.Index, now, true); !fresh || got != limited {
+		t.Fatal("reset invalidation must preserve active usage-read backoff")
+	}
+}
+
+func TestGetUsageLimitsRateLimitBackoff(t *testing.T) {
+	for _, provider := range []string{"claude", "codex"} {
+		for _, retryAfter := range []string{"", "900"} {
+			t.Run(provider+"/retry-after="+retryAfter, func(t *testing.T) {
+				auth := claudeTestAuth("account", "test@example.com")
+				if provider == "codex" {
+					auth = codexTestAuth("account", "test@example.com")
+				}
+				auth.Quota = coreauth.QuotaState{ObservedAt: time.Now().Add(-10 * time.Minute), Signals: map[string]string{}}
+				if provider == "claude" {
+					auth.Quota.Signals["Anthropic-Ratelimit-Unified-5h-Utilization"] = "0.4"
+				}
+				h, recorded := newUsageTestHandler(t, []*coreauth.Auth{auth}, func(*http.Request, []byte) *http.Response {
+					resp := usageJSONResponse(http.StatusTooManyRequests, `{}`)
+					resp.Header.Set("Retry-After", retryAfter)
+					return resp
+				})
+
+				account := getUsageLimits(t, h).Providers[0].Accounts[0]
+				if account.Error != "The provider is rate limiting usage reads." {
+					t.Fatalf("unexpected probe error: %q", account.Error)
+				}
+				if provider == "claude" && (account.Source != "headers" || account.Status != "ok" || len(account.Windows) != 1 || account.Windows[0].UsedPercent != 40) {
+					t.Fatalf("usage throttling must preserve header fallback: %+v", account)
+				}
+				current, _ := h.authManager.GetByID(auth.ID)
+				if current.Quota.Exceeded || current.Unavailable || !current.NextRetryAfter.IsZero() {
+					t.Fatalf("usage throttling must not cool inference credentials: %+v", current.Quota)
+				}
+
+				index := authIndexFor(t, h, auth.ID)
+				probe, _ := h.usageLimits.get(index, time.Now(), false)
+				if probe == nil || probe.retryAt.IsZero() {
+					t.Fatal("rate-limited probe must carry a retry deadline")
+				}
+				// Advance the read time explicitly; neither automatic polling nor
+				// refresh=1 may bypass backoff after the usual error TTL expires.
+				for _, force := range []bool{false, true} {
+					before := probe.retryAt.Add(-time.Nanosecond)
+					h.usageAccountFor(context.Background(), current, before, force)
+					if len(*recorded) != 1 {
+						t.Fatalf("force=%v: backoff triggered %d upstream requests, want 1", force, len(*recorded))
+					}
+					if _, fresh := h.usageLimits.get(index, probe.retryAt, force); fresh {
+						t.Fatalf("force=%v: probe must expire at the provider retry deadline", force)
+					}
+				}
+				// An expired deadline permits a new probe.
+				h.usageAccountFor(context.Background(), current, probe.retryAt, false)
+				if len(*recorded) != 2 {
+					t.Fatalf("expired backoff: got %d requests, want 2", len(*recorded))
+				}
+			})
+		}
 	}
 }

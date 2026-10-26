@@ -26,7 +26,19 @@ import (
 
 func newUpstreamAttemptContext(ctx context.Context) context.Context {
 	ctx = logging.WithFreshResponseHeadersHolder(ctx)
+	ctx = logging.WithResponseHeadersObserver(ctx, nil)
 	return cliproxyexecutor.WithUpstreamAttemptTracker(ctx)
+}
+
+func (m *Manager) newUpstreamAttemptContext(ctx context.Context, auth *Auth) context.Context {
+	ctx = newUpstreamAttemptContext(ctx)
+	if auth != nil && ProviderSupportsQuotaObservation(auth.Provider) {
+		id, epoch, version := auth.ID, auth.RegistrationEpoch, auth.CredentialVersion
+		ctx = logging.WithResponseHeadersObserver(ctx, func(headers http.Header, observedAt time.Time) {
+			m.observeQuotaHeaders(id, epoch, version, headers, observedAt)
+		})
+	}
+	return ctx
 }
 
 func claudeOAuthRequestCancellation(ctx context.Context, auth *Auth, err error) error {
@@ -530,7 +542,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 			execCtx = context.WithValue(execCtx, "cliproxy.roundtripper", rt)
 		}
 		execCtx = contextWithRequestedModelAlias(execCtx, opts, routeModel)
-		execCtx = newUpstreamAttemptContext(execCtx)
+		execCtx = m.newUpstreamAttemptContext(execCtx, auth)
 
 		models, pooled, aliasResult, routing := m.preparedExecutionModelsWithAlias(auth, routeModel)
 		if len(models) == 0 {
@@ -556,7 +568,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 		var authErr error
 		didRefreshOnUnauthorized := false
 		for _, upstreamModel := range models {
-			execCtx = newUpstreamAttemptContext(execCtx)
+			execCtx = m.newUpstreamAttemptContext(execCtx, auth)
 			resultModel := m.stateModelForExecution(auth, routeModel, upstreamModel, pooled)
 			execReq := req
 			execReq.Model = upstreamModel
@@ -603,11 +615,11 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 				if errCtx := execCtx.Err(); errCtx != nil {
 					return cliproxyexecutor.Response{}, errCtx
 				}
-				refreshCtx := newUpstreamAttemptContext(execCtx)
+				refreshCtx := m.newUpstreamAttemptContext(execCtx, auth)
 				if refreshed, okRefresh := m.tryRefreshAfterUnauthorized(refreshCtx, auth, errExec, didRefreshOnUnauthorized, execOpts.Headers); okRefresh {
 					auth = refreshed
 					didRefreshOnUnauthorized = true
-					execCtx = newUpstreamAttemptContext(execCtx)
+					execCtx = m.newUpstreamAttemptContext(execCtx, auth)
 					execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
 					executionSeq = m.nextExecutionSeq()
 					startRetry := time.Now()
@@ -1063,7 +1075,7 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 		}
 		// Enrich before auth preparation so prepare-stage usage records observe the client request.
 		execCtx = contextWithRequestedModelAlias(execCtx, opts, routeModel)
-		execCtx = newUpstreamAttemptContext(execCtx)
+		execCtx = m.newUpstreamAttemptContext(execCtx, auth)
 		models, pooled, aliasResult, routing := m.executionModelCandidatesWithAlias(auth, routeModel)
 		// Home owns dispatched credential availability; only local selections need state filtering.
 		if selection == nil {

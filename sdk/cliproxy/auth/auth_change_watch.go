@@ -1,5 +1,7 @@
 package auth
 
+import "github.com/router-for-me/CLIProxyAPI/v8/internal/usageupdates"
+
 // WatchAuthChanges observes structural changes to one runtime credential,
 // including token preparation/refresh, replacement, removal and store reload.
 // Notifications are coalesced: consumers must inspect the latest manager state.
@@ -37,6 +39,7 @@ func (m *Manager) WatchAuthChanges(authID string) (<-chan struct{}, func()) {
 
 // Caller holds m.mu. No user callback or blocking work runs under the manager lock.
 func (m *Manager) notifyAuthChangeLocked(authID string) {
+	usageupdates.Notify()
 	for changes := range m.authChangeWatchers[authID] {
 		select {
 		case changes <- struct{}{}:

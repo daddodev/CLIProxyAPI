@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestWithFreshResponseHeadersHolderIsolatesAttempts(t *testing.T) {
@@ -30,5 +31,28 @@ func TestWithFreshResponseHeadersHolderIsolatesAttempts(t *testing.T) {
 	}
 	if got := GetResponseHeaders(secondAttemptCtx).Get("X-Upstream-Attempt"); got != "second" {
 		t.Fatalf("second attempt holder = %q, want second", got)
+	}
+}
+
+func TestResponseHeadersObserverSeesStreamUpdatesOutsideLock(t *testing.T) {
+	ctx := WithFreshResponseHeadersHolder(context.Background())
+	var snapshots []http.Header
+	ctx = WithResponseHeadersObserver(ctx, func(headers http.Header, observedAt time.Time) {
+		if observedAt.IsZero() {
+			t.Error("missing observation timestamp")
+		}
+		// Re-entry must not deadlock, and mutating the callback's snapshot must
+		// not corrupt the header holder used by retries and result accounting.
+		_ = GetResponseHeaders(ctx)
+		snapshots = append(snapshots, headers.Clone())
+		headers.Set("X-Codex-Primary-Used-Percent", "999")
+	})
+	SetResponseHeaders(ctx, http.Header{"X-Codex-Plan-Type": {"pro"}})
+	MergeResponseHeaders(ctx, http.Header{"X-Codex-Primary-Used-Percent": {"42"}})
+	if len(snapshots) != 2 || snapshots[1].Get("X-Codex-Plan-Type") != "pro" || snapshots[1].Get("X-Codex-Primary-Used-Percent") != "42" {
+		t.Fatalf("unexpected stream observations: %+v", snapshots)
+	}
+	if GetResponseHeaders(ctx).Get("X-Codex-Primary-Used-Percent") != "42" {
+		t.Fatal("observer modified the stored response headers")
 	}
 }

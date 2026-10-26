@@ -42,6 +42,7 @@ func (s *Server) registerManagementV8Routes() {
 	v8.GET("/observability/usage/limits", s.mgmt.GetUsageLimits)
 	v8.POST("/observability/usage/limits/reset", s.mgmt.PostUsageLimitsReset)
 	v8.GET("/observability/usage/history", s.mgmt.GetUsageHistory)
+	v8.GET("/observability/usage/stream", s.mgmt.StreamUsage)
 
 	v8.GET("/credentials", s.mgmt.ListAuthFiles)
 	v8.POST("/credentials", s.mgmt.UploadAuthFileV8)
