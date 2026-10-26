@@ -69,18 +69,6 @@ button, input { font: inherit; color: inherit }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums }
 .muted { color: var(--muted) }
 
-/* Header */
-.top {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: color-mix(in oklch, var(--bg) 74%, transparent);
-    backdrop-filter: blur(14px) saturate(1.3);
-    -webkit-backdrop-filter: blur(14px) saturate(1.3);
-    border-bottom: 1px solid var(--line);
-}
-.top-in { display: flex; align-items: center; gap: 10px; height: 56px }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -0.015em; margin-right: auto; min-width: 0 }
 .brand-mark { position: relative; width: 22px; height: 14px; flex: none }
 .brand-mark::before, .brand-mark::after {
     content: "";
@@ -94,56 +82,6 @@ button, input { font: inherit; color: inherit }
 @media (prefers-color-scheme: light) { .brand-mark::before, .brand-mark::after { mix-blend-mode: multiply } }
 .brand-mark::before { left: 0; background: var(--claude) }
 .brand-mark::after { right: 0; background: var(--codex) }
-.brand-name { white-space: nowrap }
-.brand-name span { color: var(--faint); font-weight: 450 }
-.demo-badge {
-    font: 600 10px var(--mono);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    padding: 3px 7px;
-    border-radius: 6px;
-    color: var(--warn);
-    background: color-mix(in oklch, var(--warn) 14%, transparent);
-}
-.live {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    height: 30px;
-    padding: 0 11px;
-    border: 1px solid var(--line);
-    border-radius: 99px;
-    font: 12px var(--mono);
-    color: var(--muted);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-}
-.live i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none }
-.live[data-state="live"] i { background: var(--ok) }
-.live[data-state="stale"] i { background: var(--warn) }
-.live[data-state="error"] i { background: var(--bad) }
-.live[data-state="error"] { color: var(--bad) }
-.live-menu { position: relative }
-.live-menu summary { cursor: pointer; list-style: none }
-.live-menu summary::-webkit-details-marker { display: none }
-.live-details {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 8px);
-    z-index: 20;
-    width: min(340px, calc(100vw - 32px));
-    max-height: 60vh;
-    overflow: auto;
-    overflow-wrap: anywhere;
-    padding: 14px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--bg);
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.7;
-    box-shadow: 0 8px 24px #0002;
-}
 
 /* Buttons */
 .btn {
@@ -180,7 +118,6 @@ button, input { font: inherit; color: inherit }
 .btn-commit:hover { background: color-mix(in oklch, var(--pc) 86%, var(--text)) }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; flex: none }
 @keyframes spin { to { transform: rotate(360deg) } }
-.top .btn.is-busy svg { animation: spin 0.9s linear infinite }
 
 /* Sections */
 main { padding-bottom: 48px }
@@ -189,7 +126,8 @@ main { padding-bottom: 48px }
 .sec-title { margin: 0; display: flex; align-items: baseline; gap: 12px; font-size: clamp(21px, 2.4vw, 27px); font-weight: 680; letter-spacing: -0.03em; line-height: 1.1 }
 .sec-idx { font: 500 11px var(--mono); letter-spacing: 0.16em; color: var(--faint) }
 .sec-meta { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
-.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: flex-end }
+.range-desc { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
 .notice {
     display: flex;
     gap: 10px;
@@ -222,7 +160,7 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
     --pc: var(--muted);
     position: relative;
     isolation: isolate;
-    padding: 18px 18px 6px;
+    padding: 18px 18px 4px;
     border-radius: 18px;
     background: var(--surface);
     border: 1px solid var(--line);
@@ -231,19 +169,42 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 }
 .prov::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: linear-gradient(90deg, var(--pc), transparent 75%) }
 .prov::after { content: ""; position: absolute; z-index: -1; inset: 0; background: radial-gradient(28rem 12rem at 0% 0%, color-mix(in oklch, var(--pc) 9%, transparent), transparent 70%); pointer-events: none }
-.prov-claude { --pc: var(--claude) }
-.prov-codex { --pc: var(--codex) }
+.prov-claude, .pop-claude { --pc: var(--claude) }
+.prov-codex, .pop-codex { --pc: var(--codex) }
 .prov-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap }
 .prov-name { margin: 0; font-size: 19px; font-weight: 680; letter-spacing: -0.025em; display: flex; align-items: center; gap: 9px }
 .prov-glyph { width: 10px; height: 10px; border-radius: 3px; background: var(--pc); box-shadow: 0 0 12px color-mix(in oklch, var(--pc) 70%, transparent); transform: rotate(45deg) }
 .prov-codex .prov-glyph { border-radius: 50%; transform: none }
 .prov-count { font: 12px var(--mono); color: var(--muted) }
-.pill { font: 500 11.5px var(--mono); padding: 3px 9px; border-radius: 99px; white-space: nowrap }
-.pill-reset { margin-left: auto; color: var(--pc); background: color-mix(in oklch, var(--pc) 11%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--pc) 30%, transparent) }
-.pill-none { margin-left: auto; color: var(--faint); box-shadow: inset 0 0 0 1px var(--line) }
+.prov-note { margin: 0; padding: 10px 0 12px; border-top: 1px solid var(--line); font: 11.5px var(--mono); color: var(--warn); overflow-wrap: anywhere }
+.reset-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    margin-left: auto;
+    padding: 0 8px 0 10px;
+    border-radius: 99px;
+    border: 0;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line-2);
+    color: var(--muted);
+    font: 500 11.5px var(--mono);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.reset-btn:hover, .reset-btn[aria-expanded="true"] { color: var(--text); background: var(--surface-2) }
+.reset-btn svg { width: 12px; height: 12px; transition: transform 0.2s var(--ease) }
+.reset-btn[aria-expanded="true"] svg { transform: rotate(180deg) }
+.reset-btn.has { color: var(--pc); background: color-mix(in oklch, var(--pc) 11%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--pc) 32%, transparent) }
+.reset-btn.has:hover, .reset-btn.has[aria-expanded="true"] { background: color-mix(in oklch, var(--pc) 19%, transparent) }
+.reset-btn.alert::after { content: ""; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--surface) }
 
 /* Gauges */
-.gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px 10px; margin: 14px 0 8px }
+.gauges, .cells { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); column-gap: clamp(14px, 3vw, 28px) }
+.gauges { row-gap: 6px; margin: 14px 0 12px }
 .gauge { container-type: inline-size; width: 100%; max-width: 210px; justify-self: center; text-align: center }
 .g-dial { position: relative }
 .g-dial svg { display: block; width: 100%; height: auto; overflow: visible }
@@ -253,6 +214,7 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 .g-val.hot { color: var(--warn) }
 .g-val.full { color: var(--bad) }
 .g-cap { margin-top: 0.35em; font: clamp(10px, 7.4cqw, 12.5px) var(--mono); color: var(--muted) }
+.g-held { margin-top: 0.15em; font: clamp(9.5px, 6.6cqw, 11px) var(--mono); color: var(--faint) }
 .g-label { position: absolute; left: 0; right: 0; bottom: 3%; font: 650 clamp(9.5px, 6.6cqw, 11px) var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--pc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 22% }
 .g-reset { margin-top: 4px; line-height: 1.3 }
 .g-rel { font-size: 13px; font-weight: 620; font-variant-numeric: tabular-nums; letter-spacing: -0.01em }
@@ -263,60 +225,94 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
     .g-abs .short { display: inline }
 }
 .g-note { font: 11px var(--mono); color: var(--faint) }
+.g-cool { margin: 1px 0 }
 .seg-trk { stroke: var(--track) }
 .seg-fill { transition: stroke-dasharray 0.9s var(--ease), stroke-dashoffset 0.9s var(--ease) }
-.g-tick { stroke: var(--line-2) }
-.g-tick.major { stroke: var(--muted) }
+.seg-fill.held { opacity: 0.38 }
+.g-res { stroke: color-mix(in oklch, var(--text) 50%, transparent) }
+.g-pace { fill: var(--muted) }
 
 /* Accounts */
-.accts { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line) }
-.acct { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "id act" "wins wins" "msg msg"; gap: 10px 14px; padding: 14px 0; border-bottom: 1px solid var(--line) }
+.accts { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line) }
+.acct { padding: 13px 0 14px; border-bottom: 1px solid var(--line) }
 .acct:last-child { border-bottom: 0 }
-.acct-id { grid-area: id; display: flex; gap: 10px; align-items: flex-start; min-width: 0 }
-.sw { width: 10px; height: 10px; border-radius: 3px; margin-top: 5px; flex: none; background: var(--c) }
-.acct-txt { min-width: 0 }
-.acct-label { font-weight: 620; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.acct-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-top: 2px; font: 11.5px var(--mono); color: var(--muted) }
-.acct-meta .dot::before { content: "·"; margin-right: 8px; color: var(--faint) }
+.acct-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0 }
+.sw { display: inline-grid; place-items: center; width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--c) }
+.sw.rank { width: 18px; height: 18px; font: 700 10.5px/1 var(--mono); color: light-dark(#fff, #0b0c0f) }
+.acct-label { min-width: 0; max-width: 100%; font-weight: 620; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.acct-plan { font: 11.5px var(--mono); color: var(--muted) }
 .chip { font: 550 10.5px var(--mono); letter-spacing: 0.04em; padding: 2px 7px; border-radius: 6px; background: var(--surface-2); color: var(--muted); white-space: nowrap }
+.chip-ok { color: var(--ok); background: color-mix(in oklch, var(--ok) 13%, transparent) }
 .chip-warn { color: var(--warn); background: color-mix(in oklch, var(--warn) 13%, transparent) }
 .chip-bad { color: var(--bad); background: color-mix(in oklch, var(--bad) 13%, transparent) }
-.acct-act { grid-area: act; display: flex; align-items: center; gap: 12px; justify-self: end }
-.credit { font: 11.5px/1.35 var(--mono); color: var(--muted); text-align: right; white-space: nowrap }
-.credit b { color: var(--text); font-weight: 620 }
-.wins { grid-area: wins; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 20px; padding-left: 20px }
-.win-top { display: flex; justify-content: space-between; gap: 8px; font: 11.5px var(--mono); color: var(--muted) }
-.win-top span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.win-top .v { color: var(--text); font-weight: 620; font-variant-numeric: tabular-nums }
-.win-top .v.hot { color: var(--warn) }
-.win-top .v.full { color: var(--bad) }
-.bar { position: relative; height: 6px; margin: 5px 0 5px; border-radius: 99px; background: var(--track) }
-.bar > i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--c); transition: width 0.9s var(--ease) }
-.bar > b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--text); opacity: 0.5; transition: left 0.9s var(--ease) }
-.win-reset { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
-.win-reset b { color: var(--text); font-weight: 560 }
-.acct-msg { grid-area: msg; padding-left: 20px }
-.acct-msg:empty { display: none }
-.acct-msg > * + * { margin-top: 8px }
-.err-line { font: 11.5px var(--mono); color: var(--bad); overflow-wrap: anywhere }
+.cells { row-gap: 12px; margin-top: 11px }
+.cell { container-type: inline-size; min-width: 0 }
+.cell-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font: 11.5px var(--mono); color: var(--muted); white-space: nowrap }
+.cell-top > span { overflow: hidden; text-overflow: ellipsis }
+.cell-v b { color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums }
+.cell.hot .cell-v b { color: var(--warn) }
+.cell.full .cell-v b { color: var(--bad) }
+.cell-k { color: var(--text) }
+.cell-res { color: var(--faint) }
+.cell-res.hit { color: var(--warn) }
+.bar { position: relative; height: 7px; margin: 6px 0 5px; border-radius: 99px; background: var(--track); overflow: hidden }
+.bar > i { position: absolute; inset: 0 auto 0 0; background: var(--c); transition: left 0.9s var(--ease), width 0.9s var(--ease) }
+.bar > i.held { opacity: 0.4 }
+.bar > .zone {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: repeating-linear-gradient(-45deg, color-mix(in oklch, var(--surface) 70%, transparent) 0 1.5px, transparent 1.5px 4px);
+    box-shadow: inset -1.5px 0 0 color-mix(in oklch, var(--text) 70%, transparent);
+}
+.bar > b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: 0.45; transition: left 0.9s var(--ease) }
+.cell-reset { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.cell-reset b { color: var(--text); font-weight: 560 }
+@container (max-width: 150px) { .cell-reset .abs { display: none } }
+.cell.is-empty .cell-v { color: var(--faint) }
+.acct-note { margin: 9px 0 0; font: 11.5px var(--mono); color: var(--warn); overflow-wrap: anywhere }
+.acct-note.bad { color: var(--bad) }
 .acct.is-disabled { opacity: 0.55 }
-.acct.is-stale .wins { opacity: 0.72 }
+.acct.is-stale .cells { opacity: 0.72 }
+
+/* Reset popover */
+.pop {
+    position: absolute;
+    inset: auto;
+    margin: 0;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(70vh, 520px);
+    overflow: auto;
+    padding: 0;
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 18px 48px -12px light-dark(#1d1b1740, #000d);
+}
+.pop:popover-open { animation: pop 0.18s var(--ease) both }
+.pop-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 10px 0 16px }
+.pop-head h3 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.015em }
+.pop-head .btn { width: 28px; height: 28px }
+.pop-desc { margin: 2px 16px 0; font-size: 12px; color: var(--muted) }
+.pop-list { list-style: none; margin: 10px 0 0; padding: 0 }
+.pop-item { padding: 11px 16px; border-top: 1px solid var(--line) }
+.pop-row { display: flex; align-items: center; gap: 10px }
+.pop-txt { flex: 1; min-width: 0 }
+.pop-label { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pop-sub { font: 11.5px var(--mono); color: var(--muted) }
+.pop-item .btn { height: 30px; font-size: 12.5px }
+.pop-item .confirm, .pop-item .outcome { margin-top: 10px }
 .confirm {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px 16px;
-    padding: 12px 14px;
-    border-radius: 12px;
+    padding: 11px 12px;
+    border-radius: 10px;
     border: 1px solid color-mix(in oklch, var(--pc) 45%, transparent);
     background: color-mix(in oklch, var(--pc) 7%, var(--surface));
     animation: pop 0.22s var(--ease) both;
 }
-.confirm p { flex: 1 1 260px; margin: 0; font-size: 13px }
-.confirm-actions { display: flex; gap: 8px; margin-left: auto }
-.outcome { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 13px; background: var(--surface-2); animation: pop 0.22s var(--ease) both }
-.outcome::before { content: ""; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--faint); flex: none }
+.confirm p { margin: 0 0 10px; font-size: 12.5px }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px }
+.outcome { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; background: var(--surface-2); animation: pop 0.22s var(--ease) both }
+.outcome::before { content: ""; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--faint); flex: none }
 .outcome.ok { background: color-mix(in oklch, var(--ok) 11%, transparent) }
 .outcome.ok::before { background: var(--ok) }
 .outcome.warn { background: color-mix(in oklch, var(--warn) 11%, transparent) }
@@ -325,7 +321,7 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 .outcome.bad::before { background: var(--bad) }
 .outcome-body { flex: 1; min-width: 0 }
 .outcome-body small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px }
-.outcome-acts { display: flex; gap: 6px; flex: none }
+.outcome-acts { display: flex; justify-content: flex-end; gap: 6px; flex: 1 0 100% }
 .outcome .btn { height: 28px; font-size: 12px }
 @keyframes pop { from { opacity: 0; transform: translateY(-4px) } }
 .locked { padding: 42px 20px; text-align: center; border-radius: 18px; border: 1px dashed var(--line-2); color: var(--muted) }
@@ -340,6 +336,7 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 .tile-s { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center }
 .tile-meter { display: flex; height: 4px; margin: 0 0 8px; border-radius: 99px; overflow: hidden; background: var(--track) }
 .tile-meter i { display: block; height: 100%; transition: width 0.7s var(--ease) }
+.pill { font: 500 11.5px var(--mono); padding: 3px 9px; border-radius: 99px; white-space: nowrap }
 .pill-unpriced { color: var(--warn); background: color-mix(in oklch, var(--warn) 12%, transparent); font-size: 10.5px; padding: 2px 7px }
 
 /* Legend / filters */
@@ -364,9 +361,6 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 .lg[aria-pressed="false"] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--c) }
 .lg em { font-style: normal; color: var(--warn); font-size: 10px }
 .lg-reset { height: 28px; font-size: 12px }
-.keys { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 11.5px var(--mono); color: var(--muted) }
-.keys span { display: inline-flex; align-items: center; gap: 6px }
-.keys i { width: 9px; height: 9px; border-radius: 3px; background: var(--c) }
 
 /* Chart panels */
 .panel { margin-top: 12px; padding: 16px 16px 10px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow) }
@@ -471,20 +465,13 @@ dialog input:focus-visible { outline-offset: 0 }
     .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)) }
 }
 @media (max-width: 640px) {
-    .top-in { gap: 6px }
-    .brand-name span { display: none }
-    .live .lbl { display: none }
-    .prov { padding: 16px 14px 4px; border-radius: 16px }
-    .wins, .acct-msg { padding-left: 0 }
-    .acct { grid-template-areas: "id id" "wins wins" "act act" "msg msg" }
-    .acct-act { justify-self: stretch; justify-content: space-between }
-    .credit { text-align: left }
+    .prov { padding: 16px 14px 2px; border-radius: 16px }
     .tbl .col-prov, .tbl .col-req { display: none }
     .tbl td, .tbl th { padding: 9px 6px }
     .share { min-width: 84px }
     .panel { padding: 14px 12px 8px; border-radius: 16px }
     .chart-empty { left: 40px }
-    .sec-head .controls { width: 100% }
+    .sec-head .controls { width: 100%; justify-content: space-between }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -497,23 +484,6 @@ dialog input:focus-visible { outline-offset: 0 }
 </style>
 </head>
 <body>
-<header class="top">
-    <div class="wrap top-in">
-        <div class="brand">
-            <span class="brand-mark" aria-hidden="true"></span>
-            <span class="brand-name">CLIProxyAPI <span>/ usage</span></span>
-            <span class="demo-badge" id="demo-badge" hidden>Demo</span>
-        </div>
-        <details class="live-menu" id="live-menu"><summary class="live" id="live" data-state="idle" aria-label="Connection status and update details"><i aria-hidden="true"></i><span class="lbl" id="live-lbl">Connecting</span></summary><div class="live-details" id="live-details"></div></details>
-        <button class="btn btn-icon btn-ghost" id="refresh" type="button" aria-label="Refresh now" title="Refresh now">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.8-4.07"/><path d="M13.5 2.5v3h-3"/></svg>
-        </button>
-        <button class="btn btn-icon btn-ghost" id="signout" type="button" aria-label="Forget management key" title="Forget management key">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 13.5H3.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1H6"/><path d="M10.5 11 13.5 8l-3-3"/><path d="M13.5 8H6"/></svg>
-        </button>
-    </div>
-</header>
-
 <main class="wrap">
     <section class="sec" id="limits" aria-labelledby="limits-title">
         <div class="sec-head">
@@ -528,17 +498,15 @@ dialog input:focus-visible { outline-offset: 0 }
         <div class="sec-head">
             <h2 class="sec-title" id="activity-title"><span class="sec-idx">02</span>Activity</h2>
             <div class="controls">
-                <fieldset class="seg-ctl" id="gran-ctl">
-                    <legend>Granularity</legend>
-                    <label><input type="radio" name="gran" value="minute"><span>Minute</span></label>
-                    <label><input type="radio" name="gran" value="hour"><span>Hour</span></label>
-                    <label><input type="radio" name="gran" value="day"><span>Day</span></label>
-                    <label><input type="radio" name="gran" value="month"><span>Month</span></label>
-                </fieldset>
-                <fieldset class="seg-ctl" id="mode-ctl">
-                    <legend>Stack by</legend>
-                    <label><input type="radio" name="mode" value="model"><span>By model</span></label>
-                    <label><input type="radio" name="mode" value="category"><span>By category</span></label>
+                <span class="range-desc" id="range-desc"></span>
+                <fieldset class="seg-ctl" id="range-ctl">
+                    <legend>Time range</legend>
+                    <label><input type="radio" name="range" value="1h"><span>1h</span></label>
+                    <label><input type="radio" name="range" value="24h"><span>24h</span></label>
+                    <label><input type="radio" name="range" value="7d"><span>7d</span></label>
+                    <label><input type="radio" name="range" value="30d"><span>30d</span></label>
+                    <label><input type="radio" name="range" value="90d"><span>90d</span></label>
+                    <label><input type="radio" name="range" value="1y"><span>1y</span></label>
                 </fieldset>
             </div>
         </div>
@@ -549,7 +517,6 @@ dialog input:focus-visible { outline-offset: 0 }
         <article class="panel" aria-labelledby="tok-title">
             <div class="panel-head">
                 <h3 class="panel-title" id="tok-title">Tokens <span class="mono" id="tok-sub"></span></h3>
-                <div id="tok-keys"></div>
             </div>
             <div class="chart" id="chart-tokens"></div>
         </article>
@@ -572,6 +539,8 @@ dialog input:focus-visible { outline-offset: 0 }
 
     <footer id="footer"></footer>
 </main>
+
+<div id="reset-pop" class="pop" popover="manual" role="dialog" aria-labelledby="reset-pop-title"></div>
 
 <dialog id="auth" aria-labelledby="auth-title">
     <form id="auth-form" method="dialog">
@@ -596,10 +565,15 @@ const DEMO = new URLSearchParams(location.search).get("demo") === "1"
 const MIN = 60_000
 const HOUR = 3_600_000
 const DAY = 86_400_000
-const GRANS = ["minute", "hour", "day", "month"]
-const MODES = ["model", "category"]
-const RANGE_LABEL = { minute: "Last 3 hours", hour: "Last 48 hours", day: "Last 30 days", month: "Last 12 months" }
-const BUCKETS = { minute: 180, hour: 48, day: 30, month: 12 }
+// Each preset pairs a lookback with the bucket size that keeps its chart readable.
+const RANGES = {
+    "1h": { gran: "minute", n: 60, label: "Last hour" },
+    "24h": { gran: "hour", n: 24, label: "Last 24 hours" },
+    "7d": { gran: "hour", n: 168, label: "Last 7 days" },
+    "30d": { gran: "day", n: 30, label: "Last 30 days" },
+    "90d": { gran: "day", n: 90, label: "Last 90 days" },
+    "1y": { gran: "month", n: 12, label: "Last 12 months" },
+}
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)")
 
 const $ = (sel, root = document) => root.querySelector(sel)
@@ -702,13 +676,6 @@ function relTime(iso, now = Date.now()) {
     return rtfN.format(sign * (d < 10 ? round(d, 1) : Math.round(d)), "day")
 }
 
-function agoShort(ms) {
-    const s = Math.max(0, Math.round(ms / 1000))
-    if (s < 60) return `${s}s ago`
-    if (s < 3600) return `${Math.floor(s / 60)}m ago`
-    return `${Math.floor(s / 3600)}h ago`
-}
-
 // ---------- Colors ----------
 
 const okl = (l, c, h) => `oklch(${round(l, 3)} ${round(c, 3)} ${round(h, 1)})`
@@ -753,10 +720,10 @@ function acctColor(provider, i) {
 }
 
 const CATS = [
-    { key: "input", label: "Input", tok: "input_tokens", color: ld(0.74, 0.13, 255) },
-    { key: "cache_read", label: "Cache read", tok: "cache_read_tokens", color: ld(0.8, 0.12, 165) },
-    { key: "cache_write", label: "Cache write", tok: "cache_write_tokens", color: ld(0.72, 0.15, 315) },
-    { key: "output", label: "Output", tok: "output_tokens", color: ld(0.82, 0.14, 78) },
+    { label: "Input", tok: "input_tokens", color: ld(0.74, 0.13, 255) },
+    { label: "Cache read", tok: "cache_read_tokens", color: ld(0.8, 0.12, 165) },
+    { label: "Cache write", tok: "cache_write_tokens", color: ld(0.72, 0.15, 315) },
+    { label: "Output", tok: "output_tokens", color: ld(0.82, 0.14, 78) },
 ]
 
 // ---------- State ----------
@@ -765,14 +732,13 @@ function loadPrefs() {
     let raw = {}
     try { raw = JSON.parse(localStorage.getItem(PREFS_STORAGE) || "{}") || {} } catch { raw = {} }
     return {
-        granularity: GRANS.includes(raw.granularity) ? raw.granularity : "hour",
-        mode: MODES.includes(raw.mode) ? raw.mode : "model",
+        range: Object.hasOwn(RANGES, raw.range) ? raw.range : "24h",
         hidden: new Set(Array.isArray(raw.hidden) ? raw.hidden.filter((k) => typeof k === "string") : []),
     }
 }
 function savePrefs() {
-    const { granularity, mode, hidden } = state.prefs
-    localStorage.setItem(PREFS_STORAGE, JSON.stringify({ granularity, mode, hidden: [...hidden] }))
+    const { range, hidden } = state.prefs
+    localStorage.setItem(PREFS_STORAGE, JSON.stringify({ range, hidden: [...hidden] }))
 }
 
 // Claims whose outcome is unknown, keyed by auth_index. Their request ID is
@@ -827,6 +793,7 @@ const state = {
     historyErr: null,
     historyFor: null,
     resetUi: new Map(),
+    resetPop: null,
     pending: loadPending(),
     hover: null,
 }
@@ -880,11 +847,12 @@ async function api(path, init = {}) {
     return body
 }
 
-function historyRange(gran, now = new Date()) {
-    const n = BUCKETS[gran]
+function historyRange(range, now = new Date()) {
+    const { gran, n } = RANGES[range]
     let from
-    if (gran === "minute") from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() - (n - 1))
-    else if (gran === "hour") from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() - (n - 1))
+    // Sub-day ranges step in real time so a DST change can't add or drop a bucket.
+    if (gran === "minute") from = new Date(+new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes()) - (n - 1) * MIN)
+    else if (gran === "hour") from = new Date(+new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()) - (n - 1) * HOUR)
     else if (gran === "day") from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (n - 1))
     else from = new Date(now.getFullYear(), now.getMonth() - (n - 1), 1)
     return { from: from.toISOString(), to: now.toISOString() }
@@ -900,13 +868,12 @@ function addGran(d, gran) {
 
 // ---------- Live updates ----------
 
-const liveStream = { controller: null, timer: 0, connected: false, busy: false, retries: 0 }
+const liveStream = { controller: null, timer: 0, retries: 0 }
 
 function stopLive() {
     clearTimeout(liveStream.timer)
     liveStream.controller?.abort()
     liveStream.controller = null
-    liveStream.connected = liveStream.busy = false
 }
 
 // Fetch keeps the management key in the Authorization header. EventSource
@@ -937,7 +904,7 @@ async function readUsageStream(body, onSnapshot) {
     }
 }
 
-function applyUsageSnapshot(snapshot, gran) {
+function applyUsageSnapshot(snapshot, range) {
     if (snapshot.limits) {
         state.limits = snapshot.limits
         state.limitsAt = Date.now()
@@ -945,7 +912,7 @@ function applyUsageSnapshot(snapshot, gran) {
     state.limitsErr = snapshot.limits_error || null
     if (snapshot.history) {
         state.history = snapshot.history
-        state.historyFor = gran
+        state.historyFor = range
         state.historyAt = Date.now()
     }
     state.historyErr = snapshot.history_error || null
@@ -958,20 +925,14 @@ function startLive() {
     if (!state.key || document.hidden) return
     const controller = new AbortController()
     liveStream.controller = controller
-    liveStream.busy = true
-    renderLive()
-    const gran = state.prefs.granularity
+    const range = state.prefs.range
     if (DEMO) {
-        Promise.all([loadLimits(), loadHistory()]).then(() => {
-            if (controller.signal.aborted) return
-            liveStream.connected = true
-            liveStream.busy = false
-            renderLive()
-        })
+        loadLimits()
+        loadHistory()
         return
     }
-    $("#activity").classList.toggle("loading", state.historyFor !== gran)
-    const qs = new URLSearchParams({ granularity: gran, buckets: BUCKETS[gran], tz: TZ })
+    $("#activity").classList.toggle("loading", state.historyFor !== range)
+    const qs = new URLSearchParams({ granularity: RANGES[range].gran, buckets: RANGES[range].n, tz: TZ })
     ;(async () => {
         try {
             const res = await fetch(`${API}/stream?${qs}`, {
@@ -982,19 +943,15 @@ function startLive() {
             if (controller.signal.aborted) return
             if (res.status === 401) { forgetKey("The key was rejected. Enter it again."); return }
             if (!res.ok || !res.headers.get("content-type")?.includes("text/event-stream")) throw new Error(`Live connection failed (HTTP ${res.status})`)
-            liveStream.connected = true
-            liveStream.busy = false
             liveStream.retries = 0
-            renderLive()
             await readUsageStream(res.body, (snapshot) => {
-                if (!controller.signal.aborted) applyUsageSnapshot(snapshot, gran)
+                if (!controller.signal.aborted) applyUsageSnapshot(snapshot, range)
             })
             throw new Error("Live connection closed; reconnecting")
         } catch (err) {
             if (controller.signal.aborted) return
-            liveStream.connected = liveStream.busy = false
             state.limitsErr = err.message || "Live connection lost"
-            renderLive()
+            renderLimits()
             const delay = Math.min(30_000, 1000 * 2 ** Math.min(liveStream.retries++, 5))
             liveStream.timer = setTimeout(startLive, delay)
         }
@@ -1022,16 +979,16 @@ async function loadLimits() {
 
 let historySeq = 0
 async function loadHistory() {
-    const gran = state.prefs.granularity
+    const range = state.prefs.range
     const seq = ++historySeq
-    const { from, to } = historyRange(gran)
-    const qs = new URLSearchParams({ granularity: gran, from, to, tz: TZ })
-    $("#activity").classList.toggle("loading", state.historyFor !== gran)
+    const { from, to } = historyRange(range)
+    const qs = new URLSearchParams({ granularity: RANGES[range].gran, from, to, tz: TZ })
+    $("#activity").classList.toggle("loading", state.historyFor !== range)
     try {
         const h = await api(`${API}/history?${qs}`)
         if (seq !== historySeq) return
         state.history = h
-        state.historyFor = gran
+        state.historyFor = range
         state.historyAt = Date.now()
         state.historyErr = null
     } catch (err) {
@@ -1100,6 +1057,28 @@ function patch(el, html) {
 
 const winKey = (w) => (w.kind === "other" ? `other:${w.label}` : w.kind)
 const acctWin = (a, w) => (a.windows || []).find((x) => winKey(x) === winKey(w))
+const clampPct = (n) => Math.max(0, Math.min(100, Number(n) || 0))
+const leftOf = (w) => clampPct(100 - (Number(w.used_percent) || 0))
+// Reserves exist only for the 5h and weekly windows; other windows follow upstream limits.
+const RESERVE_FIELD = { five_hour: "quota_5h_remaining_percent", weekly: "quota_weekly_remaining_percent" }
+const reserveOf = (a, w) => (RESERVE_FIELD[w.kind] ? clampPct(a[RESERVE_FIELD[w.kind]]) : 0)
+const priorityOf = (a) => Number(a.priority) || 0
+const ROUTING_LABEL = { "fill-first": "Fill-first routing · highest priority first", "weighted-round-robin": "Weighted round-robin routing" }
+
+// accountRows lists accounts in routing order (higher priority first) with a
+// stable color, a tier rank when priorities differ, and the fill-first pick.
+function accountRows(p) {
+    const list = (p.accounts || []).map((a, i) => ({ a, i }))
+    list.sort((x, y) => priorityOf(y.a) - priorityOf(x.a) || x.i - y.i)
+    const tiers = [...new Set(list.map((x) => priorityOf(x.a)))]
+    let active = null
+    if (state.limits?.routing_strategy === "fill-first" && list.length > 1) {
+        const ready = list.filter((x) => !x.a.disabled && x.a.status === "ok")
+        // Equal priorities are ordered by an ID this page doesn't see, so only a clear winner is marked.
+        if (ready.length === 1 || (ready.length > 1 && priorityOf(ready[1].a) !== priorityOf(ready[0].a))) active = ready[0].a
+    }
+    return list.map((x, k) => ({ a: x.a, color: acctColor(p.provider, k), rank: tiers.length > 1 ? tiers.indexOf(priorityOf(x.a)) + 1 : 0, active: x.a === active }))
+}
 
 function arcPath(cx, cy, r, a0, a1) {
     const rad = (a) => (a * Math.PI) / 180
@@ -1109,51 +1088,74 @@ function arcPath(cx, cy, r, a0, a1) {
     return `M${round(x0, 2)} ${round(y0, 2)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${round(x1, 2)} ${round(y1, 2)}`
 }
 
-function gaugeHtml(p, w) {
-    const used = Number(w.used_percent) || 0
-    const cap = Math.max(100, Number(w.capacity_percent) || 100)
-    const remaining = Math.max(0, Math.min(cap, cap - used))
-    const n = Math.max(1, Math.round(cap / 100))
-    const reporting = (p.accounts || []).map((a, i) => ({ a, i, w: acctWin(a, w) })).filter((x) => x.w)
-    let segs
-    if (reporting.length === n) {
-        segs = reporting.map((x) => ({ remaining: Math.max(0, Math.min(100, 100 - (Number(x.w.used_percent) || 0))), color: acctColor(p.provider, x.i), label: x.a.label }))
-    } else {
-        segs = Array.from({ length: n }, (_, i) => ({ remaining: Math.min(100, Math.max(0, remaining - i * 100)), color: acctColor(p.provider, i), label: "" }))
-    }
-    // Pack each account's remaining capacity from the start of one continuous
-    // track, leaving all depleted capacity at the end of the dial.
+function gaugeHtml(p, w, rows) {
+    // Accounts stack end to end in reverse routing order, so the account used
+    // first sits next to the empty stretch and the dial drains like a fuel gauge.
+    const enabled = rows.filter((r) => !r.a.disabled)
+    const slots = enabled.map((r) => ({ ...r, w: acctWin(r.a, w) })).filter((s) => s.w).reverse()
+        .map((s) => ({ ...s, left: leftOf(s.w), reserve: reserveOf(s.a, s.w) }))
+    const n = Math.max(1, slots.length)
+    const cap = n * 100
     const cx = 60, cy = 60, r = 47, sw = 10
+    const outer = r + sw / 2 + 2.5
     const track = arcPath(cx, cy, r, -135, 135)
-    const sepUnits = 0.7
-    let arcs = `<path class="seg-trk" d="${track}" stroke-width="${sw}" fill="none"/>`
-    let ticks = ""
-    let start = 0
-    const pieces = segs.map((s) => ({ ...s, len: (s.remaining / cap) * 100 })).filter((s) => s.len > 0)
-    pieces.forEach((s, i) => {
-        const len = Math.max(0, s.len - (i < pieces.length - 1 ? sepUnits : 0))
-        arcs += `<path class="seg-fill" d="${track}" pathLength="100" stroke-width="${sw}" fill="none" style="stroke:${s.color};stroke-dasharray:${round(len, 2)} 100;stroke-dashoffset:${round(-start, 2)}"><title>${esc(s.label ? `${s.label}: ${fmtPct(s.remaining)} left` : `${fmtPct(s.remaining)} left`)}</title></path>`
-        start += s.len
-    })
-    for (let k = 0; k <= n * 4; k++) {
-        const a = ((-135 + (270 * k) / (n * 4)) * Math.PI) / 180
-        const major = k % 4 === 0
-        const r0 = r + sw / 2 + 2.5, r1 = r0 + (major ? 4.5 : k % 2 ? 2 : 3)
-        ticks += `<line class="g-tick${major ? " major" : ""}" x1="${round(cx + r0 * Math.sin(a), 2)}" y1="${round(cy - r0 * Math.cos(a), 2)}" x2="${round(cx + r1 * Math.sin(a), 2)}" y2="${round(cy - r1 * Math.cos(a), 2)}" stroke-width="${major ? 1.4 : 1}"/>`
+    const gap = n > 1 ? (2.2 / 270) * cap : 0
+    const scale = (cap - gap * (n - 1)) / cap
+    const angle = (u) => ((-135 + (270 * u) / cap) * Math.PI) / 180
+    const pt = (a, rr) => `${round(cx + rr * Math.sin(a), 2)} ${round(cy - rr * Math.cos(a), 2)}`
+    const seg = (cls, u0, u1, color = "", title = "") => `<path class="${cls}" d="${track}" pathLength="100" stroke-width="${sw}" fill="none" style="${color ? `stroke:${color};` : ""}stroke-dasharray:${round((Math.max(0, u1 - u0) / cap) * 100, 2)} 100;stroke-dashoffset:${round((-u0 / cap) * 100, 2)}">${title ? `<title>${esc(title)}</title>` : ""}</path>`
+    const line = (u, r0, r1, cls, width, title = "") => {
+        const [x1, y1] = pt(angle(u), r0).split(" ")
+        const [x2, y2] = pt(angle(u), r1).split(" ")
+        return `<line class="${cls}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${width}">${title ? `<title>${esc(title)}</title>` : ""}</line>`
     }
-    const frac = used / cap
-    const tone = frac >= 1 ? "full" : frac >= 0.85 ? "hot" : ""
+    let arcs = seg("seg-trk", 0, cap)
+    let marks = ""
+    let usable = 0
+    let held = 0
+    let at = 0
+    for (const s of slots) {
+        if (s.left <= 0) continue
+        const keep = Math.min(s.left, s.reserve)
+        usable += Math.max(0, s.left - s.reserve)
+        held += keep
+        const title = `${s.a.label}: ${fmtPct(s.left)} left${s.reserve ? `, routing stops at ${fmtPct(s.reserve)}` : ""}`
+        const u = (v) => at + v * scale
+        arcs += seg("seg-fill held", u(0), u(keep), s.color, title)
+        arcs += seg("seg-fill", u(keep), u(s.left), s.color, title)
+        if (s.reserve > 0) marks += line(u(keep), r - sw / 2, r + sw / 2 + 2, "g-res", 1.1, `${s.a.label}: routing stops at ${fmtPct(s.reserve)} left`)
+        at = u(s.left) + gap
+    }
+    // A lone account also gets its even-pace marker; several accounts show it per row.
+    const elapsed = slots.length === 1 ? paceAt(slots[0].w) : null
+    if (elapsed != null) {
+        const a = angle(100 - elapsed)
+        const t = [Math.cos(a) * 2.6, Math.sin(a) * 2.6]
+        const [bx, by] = pt(a, outer + 5.5).split(" ").map(Number)
+        marks += `<path class="g-pace" d="M${pt(a, outer + 0.5)}L${round(bx + t[0], 2)} ${round(by + t[1], 2)}L${round(bx - t[0], 2)} ${round(by - t[1], 2)}Z"><title>Even pace through the window</title></path>`
+    }
+    const anyReserve = slots.some((s) => s.reserve > 0)
+    const tone = usable <= 0 ? "full" : usable / cap < 0.15 ? "hot" : ""
+    const capText = `${anyReserve ? "usable" : "left"}${n > 1 ? ` of ${fmtPct(cap)}` : ""}`
     const reset = w.next_reset_at
-    const total = p.account_count ?? (p.accounts || []).length
-    const note = w.reporting_accounts != null && w.reporting_accounts < total ? `${w.reporting_accounts} of ${total} reporting` : ""
-    const aria = `${p.label} ${w.label}: ${fmtPct(remaining)} left of ${fmtPct(cap)} across ${n} account${n > 1 ? "s" : ""}${reset ? `, next reset ${relTime(reset)}` : ""}`
+    const note = slots.length < enabled.length ? `${slots.length} of ${enabled.length} reporting` : ""
+    // Once every account is out of usable quota, routing resumes when the first
+    // one comes back: at its cooldown end, or else when its window resets.
+    const exhausted = slots.length > 0 && slots.every((s) => s.left <= s.reserve)
+    const cool = exhausted ? slots.map((s) => ({ a: s.a, until: (s.a.status === "cooldown" && s.a.cooldown_until) || s.w.resets_at }))
+        .filter((c) => c.until && !Number.isNaN(new Date(c.until).getTime()))
+        .sort((x, y) => new Date(x.until) - new Date(y.until)).slice(0, 1) : []
+    const coolLine = (c) => `<div class="g-cool"><span class="chip chip-warn" title="${esc(c.a.label)} is usable again ${esc(absTime(c.until))}">Cooldown <span data-rel="${esc(c.until)}">${esc(relTime(c.until))}</span></span></div>`
+    // The cooldown replaces the reset line when both end together.
+    const merged = reset && cool.length && Math.abs(new Date(cool[0].until).getTime() - new Date(reset).getTime()) < 2 * MIN
+    const aria = `${p.label} ${w.label}: ${fmtPct(usable)} ${capText}${held > 0 ? `, plus ${fmtPct(held)} kept in reserve` : ""}${reset ? `, next reset ${relTime(reset)}` : ""}${cool.length ? `, cooldown ends ${relTime(cool[0].until)}` : ""}`
     return `<div class="gauge" data-key="g-${esc(winKey(w))}">
         <div class="g-dial">
-            <svg viewBox="0 0 120 106" role="img" aria-label="${esc(aria)}">${ticks}${arcs}</svg>
-            <div class="g-center" aria-hidden="true"><div class="g-val ${tone}">${pctParts(remaining)}</div><div class="g-cap">left of ${esc(fmtPct(cap))}</div></div>
+            <svg viewBox="0 0 120 106" role="img" aria-label="${esc(aria)}">${arcs}${marks}</svg>
+            <div class="g-center" aria-hidden="true"><div class="g-val ${tone}">${pctParts(usable)}</div><div class="g-cap">${esc(capText)}</div>${held >= 0.5 ? `<div class="g-held">+${esc(fmtPct(held))} reserved</div>` : ""}</div>
             <div class="g-label" aria-hidden="true" title="${esc(w.label)}">${esc(w.label)}</div>
         </div>
-        <div class="g-reset">${reset ? `<div class="g-rel" data-rel="${esc(reset)}">${esc(relTime(reset))}</div><div class="g-abs"><span class="long">${esc(absTime(reset))}</span><span class="short">${esc(absShort(reset))}</span></div>` : `<div class="g-abs">no reset time</div>`}${note ? `<div class="g-note">${esc(note)}</div>` : ""}</div>
+        <div class="g-reset">${reset ? `${merged ? coolLine(cool[0]) : `<div class="g-rel" data-rel="${esc(reset)}">${esc(relTime(reset))}</div>`}<div class="g-abs"><span class="long">${esc(absTime(reset))}</span><span class="short">${esc(absShort(reset))}</span></div>${cool.slice(merged ? 1 : 0).map(coolLine).join("")}` : `<div class="g-abs">no reset time</div>${cool.map(coolLine).join("")}`}${note ? `<div class="g-note">${esc(note)}</div>` : ""}</div>
     </div>`
 }
 
@@ -1165,70 +1167,45 @@ function paceAt(w, now = Date.now()) {
     return elapsed > 0 && elapsed < 1 ? elapsed * 100 : null
 }
 
-const SOURCE_LABEL = { probe: "idle refresh", headers: "from requests", cached: "cached usage", none: "no data" }
+function cellHtml(a, w) {
+    const left = leftOf(w)
+    const reserve = reserveOf(a, w)
+    const usable = left - reserve
+    const tone = left <= 0 ? " full" : usable < 15 ? " hot" : ""
+    const elapsed = paceAt(w)
+    const label = w.kind === "other" ? `<span class="cell-k" title="${esc(w.label)}">${esc(w.label)}</span>` : ""
+    const stop = reserve ? `<span class="cell-res${usable <= 0 ? " hit" : ""}" title="Routing skips this account once ${esc(fmtPct(reserve))} is left">${usable <= 0 ? "stopped" : "stops"} at ${esc(fmtPct(reserve))}</span>` : ""
+    const aria = `${w.label}: ${fmtPct(left)} left${reserve ? `, routing stops at ${fmtPct(reserve)}` : ""}`
+    return `<div class="cell${tone}" data-key="w-${esc(winKey(w))}">
+        <div class="cell-top">${label}<span class="cell-v"><b>${esc(fmtPct(left))}</b> left</span>${stop}</div>
+        <div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(left, 1)}" aria-label="${esc(aria)}"><i class="held" style="width:${round(Math.min(left, reserve), 2)}%"></i><i style="left:${round(reserve, 2)}%;width:${round(Math.max(0, usable), 2)}%"></i>${reserve ? `<span class="zone" style="width:${round(reserve, 2)}%"></span>` : ""}${elapsed != null ? `<b style="left:${round(100 - elapsed, 2)}%" title="Even pace"></b>` : ""}</div>
+        <div class="cell-reset">${w.resets_at ? `<b data-rel="${esc(w.resets_at)}">${esc(relTime(w.resets_at))}</b><span class="abs"> · ${esc(absShort(w.resets_at))}</span>` : "no reset time"}</div>
+    </div>`
+}
 
-function accountHtml(p, a, i) {
-    const color = acctColor(p.provider, i)
-    const ui = state.resetUi.get(a.auth_index)
+function accountHtml(row, wins, single, cols, sharedError) {
+    const { a, color, rank, active } = row
     const chips = []
+    if (active) chips.push(`<span class="chip chip-ok" title="Fill-first routing sends new requests here">In use</span>`)
     if (a.disabled || a.status === "disabled") chips.push(`<span class="chip">Disabled</span>`)
-    if (a.status === "cooldown") chips.push(`<span class="chip chip-warn">Cooldown${a.cooldown_until ? ` · <span data-rel="${esc(a.cooldown_until)}">${esc(relTime(a.cooldown_until))}</span>` : ""}</span>`)
-    if (a.status === "error") chips.push(`<span class="chip chip-bad">Probe failed</span>`)
-    const meta = []
-    if (a.plan) meta.push(`<span>${esc(a.plan)}</span>`)
-    const wins = (a.windows || []).map((w) => {
-        const u = Number(w.used_percent) || 0
-        const remaining = Math.max(0, Math.min(100, 100 - u))
-        const tone = u >= 100 ? "full" : u >= 85 ? "hot" : ""
-        const elapsed = paceAt(w)
-        const pace = elapsed == null ? null : 100 - elapsed
-        return `<div class="win" data-key="w-${esc(winKey(w))}">
-            <div class="win-top"><span>${esc(w.label)}</span><span class="v ${tone}">${esc(fmtPct(remaining))} left</span></div>
-            <div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(remaining, 1)}" aria-label="${esc(`${w.label} left`)}"><i style="width:${remaining}%"></i>${pace != null ? `<b style="left:${round(pace, 2)}%" title="Even pace"></b>` : ""}</div>
-            <div class="win-reset">${w.resets_at ? `<b data-rel="${esc(w.resets_at)}">${esc(relTime(w.resets_at))}</b> · ${esc(absShort(w.resets_at))}` : "no reset time"}</div>
-        </div>`
-    }).join("")
-    meta.push(`<span>Priority ${esc(a.priority ?? 0)}</span>`)
-    for (const [label, reserve] of [["5h", a.quota_5h_remaining_percent], ["Weekly", a.quota_weekly_remaining_percent]]) {
-        meta.push(`<span>${label}: ${reserve > 0 ? `stop with ${esc(reserve)}% left` : "upstream limit"}</span>`)
-    }
-    if (a.limit_reached) chips.push('<span class="pill">Usage limit reached</span>')
-    const r = a.resets
-    let act = ""
-    if (!r) act = `<span class="credit">resets unknown</span>`
-    else if (!r.available) act = `<span class="credit">no resets</span>`
-    else {
-        act = `<span class="credit"><b>${nf.format(r.available)} reset${r.available > 1 ? "s" : ""}</b>${r.next_expires_at ? `<br>exp. ${esc(absShort(r.next_expires_at))}` : ""}</span>`
-        if (ui?.phase === "busy") act += `<button class="btn btn-accent" type="button" disabled><span class="spin" aria-hidden="true"></span>Redeeming…</button>`
-        else if (ui?.phase !== "confirm" && r.next_credit_id && !a.disabled) act += `<button class="btn btn-accent" type="button" data-action="reset-open" data-id="${esc(a.auth_index)}" data-focus="open-${esc(a.auth_index)}">Use reset</button>`
-    }
-    let msg = ""
-    if (a.error) msg += `<div class="err-line">${esc(a.error)}</div>`
-    if (ui?.phase === "confirm") {
-        const exp = r?.next_expires_at ? ` This credit expires <b>${esc(absTime(r.next_expires_at))}</b>.` : ""
-        msg += `<div class="confirm" role="group" aria-label="Confirm reset">
-            <p>Redeem a ${esc(p.label)} reset on <b>${esc(a.label)}</b>? Redemption can't be undone.${exp}</p>
-            <div class="confirm-actions">
-                <button class="btn btn-ghost" type="button" data-action="reset-cancel" data-id="${esc(a.auth_index)}" data-focus="cancel-${esc(a.auth_index)}">Cancel</button>
-                <button class="btn btn-commit" type="button" data-action="reset-confirm" data-id="${esc(a.auth_index)}">Redeem reset</button>
-            </div>
-        </div>`
-    } else if (ui?.phase === "done") {
-        const o = describeOutcome(ui)
-        msg += `<div class="outcome ${o.tone}" role="status">
-            <div class="outcome-body">${esc(o.text)}${o.detail ? `<small>${esc(o.detail)}</small>` : ""}</div>
-            <div class="outcome-acts">${o.retry ? `<button class="btn btn-accent" type="button" data-action="reset-retry" data-id="${esc(a.auth_index)}" data-focus="retry-${esc(a.auth_index)}">Retry same credit</button>` : ""}<button class="btn btn-ghost" type="button" data-action="reset-dismiss" data-id="${esc(a.auth_index)}" data-focus="dismiss-${esc(a.auth_index)}">Dismiss</button></div>
-        </div>`
-    }
-    const cls = ["acct", a.disabled || a.status === "disabled" ? "is-disabled" : "", a.source === "headers" || a.status === "error" ? "is-stale" : ""].join(" ")
+    if (a.status === "cooldown") chips.push(`<span class="chip chip-warn"${a.cooldown_until ? ` title="Until ${esc(absTime(a.cooldown_until))}"` : ""}>Cooldown${a.cooldown_until ? ` <span data-rel="${esc(a.cooldown_until)}">${esc(relTime(a.cooldown_until))}</span>` : ""}</span>`)
+    if (a.limit_reached) chips.push(`<span class="chip chip-warn" title="Routing skips this account until a window resets">Reserve reached</span>`)
+    // A single account's 5h and weekly windows are already on the dials.
+    const cells = single ? [] : wins.map((w) => {
+        const aw = acctWin(a, w)
+        return aw ? cellHtml(a, aw) : `<div class="cell is-empty" data-key="w-${esc(winKey(w))}"><div class="cell-top"><span class="cell-v">No data</span></div></div>`
+    })
+    for (const w of a.windows || []) if (!wins.some((x) => winKey(x) === winKey(w))) cells.push(cellHtml(a, w))
+    let note = ""
+    if (a.error && a.error !== sharedError) note = a.error + (a.source === "headers" ? " Showing the last values seen in responses." : "")
+    const sw = rank
+        ? `<span class="sw rank" title="Priority ${esc(priorityOf(a))}" aria-hidden="true">${rank}</span><span class="sr">Routing order ${rank}, priority ${esc(priorityOf(a))}.</span>`
+        : `<span class="sw" aria-hidden="true"></span>`
+    const cls = ["acct", a.disabled || a.status === "disabled" ? "is-disabled" : "", a.error || a.status === "error" ? "is-stale" : ""].filter(Boolean).join(" ")
     return `<li class="${cls}" data-key="a-${esc(a.auth_index)}" style="--c:${color}">
-        <div class="acct-id"><span class="sw" aria-hidden="true"></span><div class="acct-txt">
-            <div class="acct-label" title="${esc(a.label)}">${esc(a.label)}</div>
-            <div class="acct-meta">${meta.join("")}${chips.join("")}</div>
-        </div></div>
-        <div class="acct-act">${act}</div>
-        <div class="wins">${wins || `<span class="win-reset">No windows reported</span>`}</div>
-        <div class="acct-msg">${msg}</div>
+        <div class="acct-head">${sw}<span class="acct-label" title="${esc(a.label)}">${esc(a.label)}</span>${a.plan ? `<span class="acct-plan">${esc(a.plan)}</span>` : ""}${chips.join("")}</div>
+        ${cells.length ? `<div class="cells" style="--cols:${cols}">${cells.join("")}</div>` : ""}
+        ${note ? `<p class="acct-note${a.source === "headers" ? "" : " bad"}">${esc(note)}</p>` : ""}
     </li>`
 }
 
@@ -1261,18 +1238,72 @@ function describeOutcome(ui) {
     return { tone: "bad", text, detail, retry: !DEFINITIVE_ERRORS.has(ui.code) }
 }
 
-function providerHtml(p) {
-    const kind = p.provider === "claude" || p.provider === "codex" ? p.provider : "other"
-    const n = p.account_count ?? (p.accounts || []).length
+const providerKind = (p) => (p.provider === "claude" || p.provider === "codex" ? p.provider : "other")
+
+function resetButtonHtml(p, rows) {
     const resets = Number(p.resets_available) || 0
-    return `<article class="prov prov-${kind}" data-key="p-${esc(p.provider)}" aria-labelledby="pn-${esc(p.provider)}">
+    const uis = rows.map((r) => state.resetUi.get(r.a.auth_index)).filter(Boolean)
+    const busy = uis.some((u) => u.phase === "busy")
+    const alert = uis.some((u) => u.phase === "done")
+    const text = busy ? "Redeeming…" : resets > 0 ? `${nf.format(resets)} reset${resets > 1 ? "s" : ""}` : "No resets"
+    return `<button class="reset-btn${resets > 0 ? " has" : ""}${alert ? " alert" : ""}" type="button" data-action="resets" data-provider="${esc(p.provider)}" data-focus="resets-${esc(p.provider)}" aria-haspopup="dialog" aria-controls="reset-pop" aria-expanded="${state.resetPop === p.provider}"${alert ? ` title="A reset attempt has a result to review"` : ""}>${busy ? `<span class="spin" aria-hidden="true"></span>` : ""}${esc(text)}<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button>`
+}
+
+function resetPopHtml(p, rows) {
+    const items = rows.map(({ a, color }) => {
+        const r = a.resets
+        const ui = state.resetUi.get(a.auth_index)
+        const id = esc(a.auth_index)
+        const sub = !r ? "Credits not reported" : !r.available ? "No credits" : `${nf.format(r.available)} credit${r.available > 1 ? "s" : ""}${r.next_expires_at ? ` · expires ${absShort(r.next_expires_at)}` : ""}`
+        let act = ""
+        if (ui?.phase === "busy") act = `<button class="btn btn-accent" type="button" disabled><span class="spin" aria-hidden="true"></span>Redeeming…</button>`
+        else if (r?.available && r.next_credit_id && !a.disabled && ui?.phase !== "confirm") act = `<button class="btn btn-accent" type="button" data-action="reset-open" data-id="${id}" data-focus="open-${id}">Use reset</button>`
+        let msg = ""
+        if (ui?.phase === "confirm") {
+            msg = `<div class="confirm" role="group" aria-label="Confirm reset">
+                <p>Use a reset credit on <b>${esc(a.label)}</b>? This can't be undone.</p>
+                <div class="confirm-actions">
+                    <button class="btn btn-ghost" type="button" data-action="reset-cancel" data-id="${id}" data-focus="cancel-${id}">Cancel</button>
+                    <button class="btn btn-commit" type="button" data-action="reset-confirm" data-id="${id}">Redeem</button>
+                </div>
+            </div>`
+        } else if (ui?.phase === "done") {
+            const o = describeOutcome(ui)
+            msg = `<div class="outcome ${o.tone}" role="status">
+                <div class="outcome-body">${esc(o.text)}${o.detail ? `<small>${esc(o.detail)}</small>` : ""}</div>
+                <div class="outcome-acts">${o.retry ? `<button class="btn btn-accent" type="button" data-action="reset-retry" data-id="${id}" data-focus="retry-${id}">Retry same credit</button>` : ""}<button class="btn btn-ghost" type="button" data-action="reset-dismiss" data-id="${id}" data-focus="dismiss-${id}">Dismiss</button></div>
+            </div>`
+        }
+        return `<li class="pop-item" data-key="pr-${id}" style="--c:${color}">
+            <div class="pop-row"><span class="sw" aria-hidden="true"></span><div class="pop-txt"><div class="pop-label" title="${esc(a.label)}">${esc(a.label)}</div><div class="pop-sub">${esc(sub)}</div></div>${act}</div>
+            ${msg}
+        </li>`
+    })
+    return `<div class="pop-in pop-${providerKind(p)}" data-key="pop-${esc(p.provider)}">
+        <div class="pop-head"><h3 id="reset-pop-title">${esc(p.label || p.provider)} resets</h3><button class="btn btn-icon btn-ghost" type="button" data-action="resets-close" aria-label="Close"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
+        <p class="pop-desc">A credit resets one account's usage windows right away.</p>
+        <ul class="pop-list">${items.join("")}</ul>
+    </div>`
+}
+
+function providerHtml(p) {
+    const rows = accountRows(p)
+    const wins = p.windows || []
+    const cols = wins.length || 2
+    const errors = rows.map((r) => r.a.error).filter(Boolean)
+    // The same failure on every account (a provider-wide rate limit) is shown once.
+    const shared = errors.length > 1 && errors.length === rows.length && errors.every((e) => e === errors[0]) ? errors[0] : ""
+    const sharedNote = shared && rows.every((r) => r.a.source === "headers") ? `${shared} Showing the last values seen in responses.` : shared
+    const n = p.account_count ?? rows.length
+    return `<article class="prov prov-${providerKind(p)}" data-key="p-${esc(p.provider)}" aria-labelledby="pn-${esc(p.provider)}">
         <header class="prov-head">
             <h3 class="prov-name" id="pn-${esc(p.provider)}"><span class="prov-glyph" aria-hidden="true"></span>${esc(p.label || p.provider)}</h3>
             <span class="prov-count">${nf.format(n)} account${n === 1 ? "" : "s"}</span>
-            ${resets > 0 ? `<span class="pill pill-reset">${nf.format(resets)} reset${resets > 1 ? "s" : ""} available</span>` : `<span class="pill pill-none">no resets</span>`}
+            ${resetButtonHtml(p, rows)}
         </header>
-        <div class="gauges">${(p.windows || []).map((w) => gaugeHtml(p, w)).join("") || `<p class="muted">No windows reported yet.</p>`}</div>
-        <ul class="accts">${(p.accounts || []).map((a, i) => accountHtml(p, a, i)).join("")}</ul>
+        <div class="gauges" style="--cols:${cols}">${wins.map((w) => gaugeHtml(p, w, rows)).join("") || `<p class="muted">No windows reported yet.</p>`}</div>
+        <ul class="accts">${rows.map((r) => accountHtml(r, wins, rows.length === 1, cols, shared)).join("")}</ul>
+        ${sharedNote ? `<p class="prov-note">${esc(sharedNote)}</p>` : ""}
     </article>`
 }
 
@@ -1280,11 +1311,13 @@ function renderLimits() {
     const body = $("#limits-body")
     const notice = $("#limits-notice")
     if (!state.key) {
+        hideResetPop()
         patch(notice, "")
         patch(body, `<div class="locked" data-key="locked"><h3>Locked</h3><p>Enter the management key to load usage.</p><button class="btn btn-primary" type="button" data-action="unlock">Enter key</button></div>`)
         return
     }
     if (!state.limits) {
+        hideResetPop()
         patch(notice, state.limitsErr ? `<div class="notice bad">Couldn't load limits: ${esc(state.limitsErr)}</div>` : "")
         if (!state.limitsErr) patch(body, [0, 1].map((i) => `<div class="prov" data-key="sk${i}"><div class="sk" style="height:22px;width:40%"></div><div class="sk" style="height:150px;margin:18px 0"></div><div class="sk" style="height:60px;margin-bottom:14px"></div></div>`).join(""))
         else patch(body, "")
@@ -1293,8 +1326,67 @@ function renderLimits() {
     patch(notice, state.limitsErr ? `<div class="notice">Couldn't refresh limits: ${esc(state.limitsErr)}. Showing the last data.</div>` : "")
     const providers = state.limits.providers || []
     patch(body, providers.length ? providers.map(providerHtml).join("") : `<div class="locked" data-key="empty"><h3>No accounts</h3><p>No Claude or Codex OAuth accounts are configured.</p></div>`)
-    $("#limits-meta").textContent = `${state.limits.routing_strategy === "fill-first" ? "One account at a time (priority)" : state.limits.routing_strategy === "weighted-round-robin" ? "Weighted distribution" : "Distributed (round-robin)"}`
+    $("#limits-meta").textContent = ROUTING_LABEL[state.limits.routing_strategy] || "Round-robin routing"
+    renderResetPop()
 }
+
+// ---------- Reset popover ----------
+
+// The popover lives outside the morphed card markup so its open state and
+// position survive every limits refresh.
+const resetPop = $("#reset-pop")
+const resetPopOpen = () => resetPop.matches(":popover-open")
+const resetPopProvider = () => (state.limits?.providers || []).find((x) => x.provider === state.resetPop)
+
+function renderResetPop() {
+    const p = resetPopProvider()
+    if (!p) return hideResetPop()
+    patch(resetPop, resetPopHtml(p, accountRows(p)))
+    placeResetPop()
+}
+
+function placeResetPop() {
+    const btn = state.resetPop && document.querySelector(`[data-focus="resets-${CSS.escape(state.resetPop)}"]`)
+    if (!btn || !resetPopOpen()) return
+    const b = btn.getBoundingClientRect()
+    const vw = document.documentElement.clientWidth
+    const left = Math.max(12, Math.min(vw - resetPop.offsetWidth - 12, b.right - resetPop.offsetWidth))
+    resetPop.style.left = `${Math.round(left + scrollX)}px`
+    resetPop.style.top = `${Math.round(b.bottom + 8 + scrollY)}px`
+}
+
+function hideResetPop() {
+    state.resetPop = null
+    if (resetPopOpen()) resetPop.hidePopover()
+}
+
+function openResetPop(id) {
+    state.resetPop = id
+    renderLimits()
+    if (!state.resetPop) return
+    if (!resetPopOpen()) resetPop.showPopover()
+    placeResetPop()
+    ;(resetPop.querySelector('[data-action="reset-retry"]') || resetPop.querySelector('[data-action="reset-open"]') || resetPop.querySelector("button"))?.focus()
+}
+
+function closeResetPop(focus) {
+    const id = state.resetPop
+    if (!id) return
+    const p = resetPopProvider()
+    hideResetPop()
+    // Keep running claims and failures that still offer a retry; drop the rest.
+    for (const a of p?.accounts || []) {
+        const ui = state.resetUi.get(a.auth_index)
+        if (ui?.phase === "confirm" || (ui?.phase === "done" && !describeOutcome(ui).retry)) state.resetUi.delete(a.auth_index)
+    }
+    renderLimits()
+    if (focus) document.querySelector(`[data-focus="resets-${CSS.escape(id)}"]`)?.focus()
+}
+
+document.addEventListener("pointerdown", (e) => {
+    if (state.resetPop && !e.target.closest("#reset-pop, [data-action='resets']")) closeResetPop()
+})
+window.addEventListener("resize", placeResetPop)
 
 // ---------- Reset flow ----------
 
@@ -1340,13 +1432,28 @@ async function redeem(id, creditId, requestId) {
     next?.focus()
 }
 
-$("#limits-body").addEventListener("click", (e) => {
+function onLimitsClick(e) {
     const btn = e.target.closest("[data-action]")
     if (!btn) return
     const id = btn.dataset.id
     switch (btn.dataset.action) {
         case "unlock": openAuth(); break
-        case "reset-open": setResetUi(id, { phase: "confirm" }, `cancel-${id}`); break
+        case "resets": {
+            const provider = btn.dataset.provider
+            if (state.resetPop === provider) closeResetPop(true)
+            else {
+                closeResetPop()
+                openResetPop(provider)
+            }
+            break
+        }
+        case "resets-close": closeResetPop(true); break
+        case "reset-open": {
+            // One confirmation at a time, so Escape always backs out of the visible one.
+            for (const [k, ui] of state.resetUi) if (ui.phase === "confirm") state.resetUi.delete(k)
+            setResetUi(id, { phase: "confirm" }, `cancel-${id}`)
+            break
+        }
         case "reset-cancel": setResetUi(id, null, `open-${id}`); break
         case "reset-dismiss": {
             // Keep an unresolved claim's request ID for reuse; just stop showing it.
@@ -1371,13 +1478,9 @@ $("#limits-body").addEventListener("click", (e) => {
             break
         }
     }
-})
-$("#limits-body").addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return
-    const box = e.target.closest(".confirm")
-    const id = box?.querySelector("[data-id]")?.dataset.id
-    if (id) setResetUi(id, null, `open-${id}`)
-})
+}
+$("#limits-body").addEventListener("click", onLimitsClick)
+resetPop.addEventListener("click", onLimitsClick)
 
 // ---------- Activity ----------
 
@@ -1394,16 +1497,12 @@ function modelList(h) {
 }
 
 function deriveChart(h, metric) {
-    const mode = state.prefs.mode
     const hidden = state.prefs.hidden
-    const models = modelList(h)
-    let keys
-    if (mode === "category") keys = CATS.map((c) => ({ key: c.key, label: c.label, color: c.color }))
-    else keys = models
+    const keys = modelList(h)
         .filter((m) => !hidden.has(m.key) && (metric === "tokens" || m.priced !== false))
         .sort((a, b) => (metric === "tokens" ? b.total_tokens - a.total_tokens : b.cost_usd - a.cost_usd))
         .map((m) => ({ key: m.key, label: m.model, color: m.color }))
-    const gran = h.granularity || state.prefs.granularity
+    const gran = h.granularity || RANGES[state.historyFor].gran
     const now = Date.now()
     const raw = h.buckets || []
     const buckets = raw.map((b, i) => {
@@ -1414,23 +1513,16 @@ function deriveChart(h, metric) {
         for (const s of b.series || []) {
             const k = seriesKey(s)
             if (hidden.has(k)) continue
-            if (metric === "cost" && (s.priced === false || (mode === "category" && !s.cost_breakdown))) {
+            if (metric === "cost" && s.priced === false) {
                 unpriced += s.total_tokens || 0
                 continue
             }
-            if (mode === "category") {
-                for (const c of CATS) {
-                    const v = metric === "tokens" ? s[c.tok] : s.cost_breakdown[c.key]
-                    vals[c.key] = (vals[c.key] || 0) + (Number(v) || 0)
-                }
-            } else {
-                vals[k] = (vals[k] || 0) + (Number(metric === "tokens" ? s.total_tokens : s.cost_usd) || 0)
-            }
+            vals[k] = (vals[k] || 0) + (Number(metric === "tokens" ? s.total_tokens : s.cost_usd) || 0)
         }
         const total = Object.values(vals).reduce((a, v) => a + v, 0)
         return { t: +start, start, end, vals, total, unpriced, partial: +end > now }
     })
-    return { gran, keys, buckets, metric, fmt: metric === "tokens" ? fmtTok : fmtUsd, axis: metric === "tokens" ? fmtTok : fmtUsdAxis }
+    return { gran, range: RANGES[state.historyFor].label, keys, buckets, metric, fmt: metric === "tokens" ? fmtTok : fmtUsd, axis: metric === "tokens" ? fmtTok : fmtUsdAxis }
 }
 
 function niceScale(max) {
@@ -1445,7 +1537,7 @@ function niceScale(max) {
 function xTicks(gran, buckets, width) {
     const target = Math.max(2, Math.floor(width / 78))
     const n = buckets.length
-    const steps = { minute: [5, 10, 15, 30, 60, 120], hour: [1, 2, 3, 6, 12, 24], day: [1, 2, 3, 5, 7, 10, 15], month: [1, 2, 3, 4, 6] }[gran]
+    const steps = { minute: [5, 10, 15, 30, 60, 120], hour: [1, 2, 3, 6, 12, 24, 48, 72], day: [1, 2, 3, 5, 7, 10, 15, 30], month: [1, 2, 3, 4, 6] }[gran]
     let step = steps[steps.length - 1]
     for (const s of steps) {
         if (n / s <= target) { step = s; break }
@@ -1455,7 +1547,7 @@ function xTicks(gran, buckets, width) {
         const d = b.start
         let on
         if (gran === "minute") on = (d.getHours() * 60 + d.getMinutes()) % step === 0
-        else if (gran === "hour") on = d.getHours() % step === 0
+        else if (gran === "hour") on = step <= 24 ? d.getHours() % step === 0 : d.getHours() === 0 && Math.round((d - new Date(d.getFullYear(), 0, 1)) / DAY) % (step / 24) === 0
         else if (gran === "day") on = (n - 1 - i) % step === 0
         else on = d.getMonth() % step === 0 || step === 1
         if (on) out.push(i)
@@ -1561,7 +1653,7 @@ class Chart {
         })
         const total = d.buckets.reduce((a, b) => a + b.total, 0)
         const peak = d.buckets.reduce((a, b) => (b.total > a.total ? b : a), d.buckets[0] || { total: 0 })
-        const aria = `${this.label}, ${RANGE_LABEL[d.gran].toLowerCase()} by ${d.gran}. Total ${d.fmt(total)}${peak?.total ? `, peak ${d.fmt(peak.total)} at ${bucketTitle(d.gran, peak)}` : ""}.`
+        const aria = `${this.label}, ${d.range.toLowerCase()} by ${d.gran}. Total ${d.fmt(total)}${peak?.total ? `, peak ${d.fmt(peak.total)} at ${bucketTitle(d.gran, peak)}` : ""}.`
         patch(this.svgEl, `<svg data-key="svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}"><g>${grid}</g><g>${bars}</g><g>${xl}</g></svg>${total ? "" : `<div class="chart-empty" data-key="empty">No activity in this range</div>`}`)
         this.el.setAttribute("aria-label", `${this.label} chart. Use left and right arrow keys to inspect buckets.`)
         this.layout = { m, W, H, pw, ph, band, n }
@@ -1666,9 +1758,21 @@ function tile(key, label, value, sub, extra = "") {
     return `<div class="tile" data-key="${key}"><div class="tile-k">${esc(label)}</div><div class="tile-v">${value}</div>${extra}<div class="tile-s">${sub}</div></div>`
 }
 
+const GRAN_UNIT = { minute: "per minute", hour: "per hour", day: "per day", month: "per month" }
+
+// "since 14:00 · per minute", "since Oct 19, 17:00 · per hour", "since Sep 27 · per day".
+function rangeDesc(range, from) {
+    const { gran } = RANGES[range]
+    const d = new Date(from)
+    if (Number.isNaN(+d)) return ""
+    const since = gran === "month" ? fMonthYear.format(d) : gran === "day" ? fDayShort.format(d) : absShort(d)
+    return `since ${since} · ${GRAN_UNIT[gran]}`
+}
+
 function renderActivity() {
     const h = state.history
-    const gran = state.prefs.granularity
+    const range = state.prefs.range
+    $("#range-desc").textContent = rangeDesc(range, h && state.historyFor === range ? h.from : historyRange(range).from)
     patch($("#history-notice"), state.historyErr ? `<div class="notice${h ? "" : " bad"}">${h ? `Couldn't refresh activity: ${esc(state.historyErr)}. Showing the last data.` : `Couldn't load activity: ${esc(state.historyErr)}`}</div>` : "")
     if (!h) {
         patch($("#tiles"), [0, 1, 2, 3].map((i) => `<div class="tile" data-key="sk${i}"><div class="sk" style="height:11px;width:50%"></div><div class="sk" style="height:30px;margin:10px 0 8px;width:70%"></div><div class="sk" style="height:11px;width:60%"></div></div>`).join(""))
@@ -1700,12 +1804,8 @@ function renderActivity() {
     const cost = deriveChart(h, "cost")
     charts.tokens.setData(tok)
     charts.cost.setData(cost)
-    const visTok = tok.buckets.reduce((a, b) => a + b.total, 0)
-    const visCost = cost.buckets.reduce((a, b) => a + b.total, 0)
-    const by = state.prefs.mode === "category" ? "by category" : "by model"
-    $("#tok-sub").textContent = `${fmtTok(visTok)} · ${by}`
-    $("#cost-sub").textContent = `${fmtUsd(visCost)} · ${by}`
-    patch($("#tok-keys"), state.prefs.mode === "category" ? `<div class="keys" aria-label="Categories">${CATS.map((c) => `<span style="--c:${c.color}"><i></i>${esc(c.label)}</span>`).join("")}</div>` : "")
+    $("#tok-sub").textContent = fmtTok(tok.buckets.reduce((a, b) => a + b.total, 0))
+    $("#cost-sub").textContent = fmtUsd(cost.buckets.reduce((a, b) => a + b.total, 0))
 
     const pr = h.pricing || {}
     const pn = $("#pricing-note")
@@ -1726,7 +1826,7 @@ function renderActivity() {
             <td><div class="share"><div class="share-bar" aria-hidden="true"><i style="width:${round(share * 100, 2)}%"></i></div><span>${m.priced === false ? "—" : esc(pctFmt.format(share))}</span></div></td>
         </tr>`
     }).join("")
-    $("#models-sub").textContent = `${models.length} · ${RANGE_LABEL[gran].toLowerCase()}`
+    $("#models-sub").textContent = nf.format(models.length)
     patch($("#models"), models.length ? `<table class="tbl" data-key="tbl">
         <thead><tr><th class="rank" scope="col">#</th><th scope="col">Model</th><th class="col-prov" scope="col">Provider</th><th class="num col-req" scope="col">Requests</th><th class="num" scope="col">Tokens</th><th class="num" scope="col">Cost</th><th scope="col">Share of cost</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -1749,18 +1849,13 @@ $("#legend").addEventListener("click", (e) => {
     if (btn.dataset.action === "show-all") $("#legend .lg")?.focus()
 })
 
-for (const input of document.querySelectorAll('input[name="gran"]')) input.checked = input.value === state.prefs.granularity
-for (const input of document.querySelectorAll('input[name="mode"]')) input.checked = input.value === state.prefs.mode
-$("#gran-ctl").addEventListener("change", (e) => {
-    state.prefs.granularity = e.target.value
+for (const input of document.querySelectorAll('input[name="range"]')) input.checked = input.value === state.prefs.range
+$("#range-ctl").addEventListener("change", (e) => {
+    state.prefs.range = e.target.value
     savePrefs()
     setHover(null)
+    $("#range-desc").textContent = rangeDesc(state.prefs.range, historyRange(state.prefs.range).from)
     startLive()
-})
-$("#mode-ctl").addEventListener("change", (e) => {
-    state.prefs.mode = e.target.value
-    savePrefs()
-    renderActivity()
 })
 
 let resizeFrame = 0
@@ -1769,38 +1864,7 @@ new ResizeObserver(() => {
     resizeFrame = requestAnimationFrame(() => { for (const c of Object.values(charts)) c.render() })
 }).observe($("#chart-tokens"))
 
-// ---------- Live status and ticking ----------
-
-function renderLive() {
-    const live = $("#live")
-    const lbl = $("#live-lbl")
-    const details = []
-    if (state.limitsAt) details.push(`Limits updated ${agoShort(Date.now() - state.limitsAt)}`)
-    if (state.historyAt) details.push(`Activity updated ${agoShort(Date.now() - state.historyAt)}`)
-    for (const p of state.limits?.providers || []) {
-        for (const a of p.accounts || []) {
-            details.push(`${a.label}: ${SOURCE_LABEL[a.source] || a.source || "no data"}${a.observed_at ? ` · ${relTime(a.observed_at)}` : ""}`)
-        }
-    }
-    const pricingAt = state.history?.pricing?.updated_at
-    if (pricingAt) details.push(`Prices updated ${relTime(pricingAt)}`)
-    if (state.limitsErr) details.push(`Last refresh failed: ${state.limitsErr}`)
-    patch($("#live-details"), details.length ? details.map((text) => `<div>${esc(text)}</div>`).join("") : "Update details will appear once connected.")
-    const busy = liveStream.busy
-    $("#refresh").classList.toggle("is-busy", busy)
-    if (!state.key) { live.dataset.state = "idle"; lbl.textContent = "Locked"; return }
-    const at = state.limitsAt
-    if (!at) {
-        live.dataset.state = state.limitsErr ? "error" : "idle"
-        lbl.textContent = state.limitsErr ? "Offline" : "Connecting"
-        live.title = state.limitsErr || ""
-        return
-    }
-    const stale = state.limitsErr || !liveStream.connected
-    live.dataset.state = stale ? "stale" : "live"
-    lbl.textContent = stale ? "Stale" : "Live"
-    live.title = state.limitsErr ? `Last refresh failed: ${state.limitsErr}` : ""
-}
+// ---------- Ticking ----------
 
 function tick() {
     const now = Date.now()
@@ -1808,22 +1872,17 @@ function tick() {
         const text = relTime(el.dataset.rel, now)
         if (el.textContent !== text) el.textContent = text
     }
-    renderLive()
 }
 setInterval(tick, 1000)
 
-document.addEventListener("click", (e) => {
-    const menu = $("#live-menu")
-    if (!menu.contains(e.target)) menu.open = false
-})
 document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && $("#live-menu").open) {
-        $("#live-menu").open = false
-        $("#live").focus()
-    }
+    if (e.key !== "Escape") return
+    if (!state.resetPop) return
+    // Escape backs out of a pending confirmation before closing the popover.
+    const confirming = (resetPopProvider()?.accounts || []).find((a) => state.resetUi.get(a.auth_index)?.phase === "confirm")
+    if (confirming) setResetUi(confirming.auth_index, null, `open-${confirming.auth_index}`)
+    else closeResetPop(true)
 })
-
-$("#refresh").addEventListener("click", () => { if (state.key) startLive(); else openAuth() })
 
 // ---------- Auth ----------
 
@@ -1847,6 +1906,7 @@ function forgetKey(message) {
     state.limitsAt = state.historyAt = 0
     state.limitsErr = state.historyErr = null
     state.resetUi.clear()
+    hideResetPop()
     stopLive()
     renderAll()
     openAuth(message)
@@ -1863,22 +1923,16 @@ $("#auth-form").addEventListener("submit", (e) => {
     startLive()
 })
 $("#auth-cancel").addEventListener("click", () => authDialog.close())
-$("#signout").addEventListener("click", () => forgetKey())
 
 // ---------- Boot ----------
 
 function renderAll() {
     renderLimits()
     renderActivity()
-    renderLive()
 }
 
-$("#footer").textContent = `Times in ${TZ}. Costs are estimates at API list prices and exclude unpriced models; subscriptions are billed separately. The tick on each account bar marks even pace through the window.`
+$("#footer").textContent = `Times in ${TZ}. Dials stack what each account has left, with the account routing uses first next to the empty end. Faded segments and hatched bars are reserves that routing leaves untouched, and the tick on a dial marks where it stops. The thin tick on a bar marks even pace through the window. Costs are estimates at API list prices and exclude unpriced models; subscriptions are billed separately.`
 
-if (DEMO) {
-    $("#demo-badge").hidden = false
-    $("#signout").hidden = true
-}
 renderAll()
 if (state.key) startLive()
 else openAuth()
@@ -1968,13 +2022,12 @@ function sumSeries(list, base) {
     return o
 }
 
-function demoHistory(gran) {
+function demoHistory(gran, from) {
     const now = new Date()
-    const { from } = historyRange(gran, now)
     let start = new Date(from)
     const buckets = []
     const salt = { minute: 11, hour: 23, day: 37, month: 53 }[gran]
-    for (let i = 0; i < BUCKETS[gran]; i++) {
+    while (start < now) {
         const end = addGran(start, gran)
         const rnd = mulberry(Math.floor(+start / MIN) * 31 + salt)
         const dur = (+end - +start) / MIN
@@ -2009,8 +2062,8 @@ function demoHistory(gran) {
 let demo = null
 function demoInit() {
     const t0 = Date.now()
-    const acct = (auth_index, label, plan, status, source, obsAgo, error, wins, resets, cooldown) => ({
-        auth_index, label, plan, status, source, error,
+    const acct = (auth_index, label, plan, status, source, obsAgo, error, wins, resets, cooldown, { priority = 0, r5 = 0, rw = 0 } = {}) => ({
+        auth_index, label, plan, status, source, error, priority, r5, rw,
         observed: t0 - obsAgo,
         cooldownUntil: cooldown ? t0 + cooldown : null,
         wins: wins.map(([kind, wl, used, resetIn, minutes]) => ({ kind, label: wl, used, resetsAt: t0 + resetIn, minutes })),
@@ -2021,13 +2074,12 @@ function demoInit() {
         t0,
         providers: [
             { provider: "claude", label: "Claude", accounts: [
-                acct("cl-7f3a", "personal@example.com", "Max 20x", "ok", "probe", 8000, "", [["five_hour", "5h", 34, 2 * HOUR + 34 * MIN, 300], ["weekly", "Weekly", 58, 4 * DAY + 7 * HOUR, 10080], ["other", "Weekly · Opus", 71, 4 * DAY + 7 * HOUR, 10080]], [1, "cr-a1", 6 * DAY + 3 * HOUR]),
-                acct("cl-91c0", "work@example.it", "Max 5x", "cooldown", "headers", 3 * MIN, "", [["five_hour", "5h", 100, 41 * MIN, 300], ["weekly", "Weekly", 72, 2 * DAY + 3 * HOUR, 10080]], [2, "cr-a2", 2 * DAY + 5 * HOUR], 41 * MIN),
+                acct("cl-7f3a", "personal@example.com", "Max 20x", "ok", "probe", 8000, "", [["five_hour", "5h", 82, 2 * HOUR + 34 * MIN, 300], ["weekly", "Weekly", 58, 4 * DAY + 7 * HOUR, 10080], ["other", "Weekly · Opus", 71, 4 * DAY + 7 * HOUR, 10080]], [1, "cr-a1", 6 * DAY + 3 * HOUR], 0, { priority: 1, r5: 20, rw: 20 }),
+                acct("cl-91c0", "work@example.it", "Max 5x", "cooldown", "headers", 3 * MIN, "", [["five_hour", "5h", 100, 41 * MIN, 300], ["weekly", "Weekly", 72, 2 * DAY + 3 * HOUR, 10080]], [2, "cr-a2", 2 * DAY + 5 * HOUR], 41 * MIN, { priority: 2 }),
+                acct("cl-e4a9", "old@example.org", "", "error", "headers", 3 * HOUR + 12 * MIN, "The provider rejected the account token; sign in again.", [["five_hour", "5h", 100, 3 * HOUR + 20 * MIN, 300], ["weekly", "Weekly", 93, DAY + 4 * HOUR, 10080]], null),
             ] },
             { provider: "codex", label: "Codex", accounts: [
-                acct("cx-02be", "dev@example.com", "Pro", "ok", "probe", 12000, "", [["five_hour", "5h", 46, HOUR + 12 * MIN, 300], ["weekly", "Weekly", 63, 5 * DAY + 2 * HOUR, 10080]], [1, "cr-c1", 12 * DAY]),
-                acct("cx-5d11", "side@example.com", "Plus", "ok", "probe", 9000, "", [["five_hour", "5h", 12, 3 * HOUR + 40 * MIN, 300], ["weekly", "Weekly", 21, 6 * DAY, 10080]], [0, "", 0]),
-                acct("cx-e4a9", "old@example.org", "", "error", "headers", 3 * HOUR + 12 * MIN, "probe failed: 401 refresh token revoked", [["five_hour", "5h", 88, 20 * MIN, 300], ["weekly", "Weekly", 93, DAY + 4 * HOUR, 10080]], null),
+                acct("cx-02be", "dev@example.com", "Pro", "ok", "probe", 12000, "", [["five_hour", "5h", 93, HOUR + 12 * MIN, 300], ["weekly", "Weekly", 63, 5 * DAY + 2 * HOUR, 10080]], [1, "cr-c1", 12 * DAY], 0, { r5: 10, rw: 15 }),
             ] },
         ],
     }
@@ -2039,27 +2091,41 @@ function demoLimits() {
     const drift = ((now - demo.t0) / MIN) * 0.2
     const iso = (t) => new Date(t).toISOString()
     const providers = demo.providers.map((p) => {
-        const accounts = p.accounts.map((a) => ({
-            auth_index: a.auth_index,
-            label: a.label,
-            plan: a.plan,
-            disabled: false,
-            status: a.status === "cooldown" && a.cooldownUntil && a.cooldownUntil < now ? "ok" : a.status,
-            cooldown_until: a.cooldownUntil && a.cooldownUntil > now ? iso(a.cooldownUntil) : null,
-            source: a.source,
-            observed_at: iso(a.source === "probe" ? now - (a.observed % 15000) - 2000 : a.observed),
-            error: a.error,
-            windows: a.wins.map((w) => ({
+        const accounts = p.accounts.map((a) => {
+            const windows = a.wins.map((w) => ({
                 kind: w.kind,
                 label: w.label,
                 used_percent: round(a.status === "ok" ? Math.min(100, w.used + drift * (w.kind === "five_hour" ? 1 : 0.2)) : w.used, 1),
                 resets_at: iso(w.resetsAt),
                 window_minutes: w.minutes,
-            })),
-            resets: a.resets && { available: a.resets.available, next_credit_id: a.resets.available ? a.resets.id : "", next_expires_at: a.resets.available ? iso(a.resets.expires) : null },
-        }))
+            }))
+            const reached = windows.some((w) => {
+                const reserve = w.kind === "five_hour" ? a.r5 : w.kind === "weekly" ? a.rw : 0
+                return reserve > 0 && 100 - w.used_percent <= reserve
+            })
+            const status = a.status === "cooldown" && a.cooldownUntil && a.cooldownUntil < now ? "ok" : a.status
+            return {
+                priority: a.priority,
+                quota_limit_percent: 0,
+                quota_5h_remaining_percent: a.r5,
+                quota_weekly_remaining_percent: a.rw,
+                limit_reached: reached,
+                auth_index: a.auth_index,
+                label: a.label,
+                plan: a.plan,
+                disabled: false,
+                status: reached && status === "ok" ? "quota_limit" : status,
+                cooldown_until: a.cooldownUntil && a.cooldownUntil > now ? iso(a.cooldownUntil) : null,
+                source: a.source,
+                observed_at: iso(a.source === "probe" ? now - (a.observed % 15000) - 2000 : a.observed),
+                error: a.error,
+                windows,
+                resets: a.resets && { available: a.resets.available, next_credit_id: a.resets.available ? a.resets.id : "", next_expires_at: a.resets.available ? iso(a.resets.expires) : null },
+            }
+        })
         const groups = new Map()
         for (const a of accounts) for (const w of a.windows) {
+            if (w.kind === "other") continue
             const k = winKey(w)
             if (!groups.has(k)) groups.set(k, { kind: w.kind, label: w.label, used_percent: 0, capacity_percent: 0, reporting_accounts: 0, next_reset_at: null })
             const g = groups.get(k)
@@ -2077,13 +2143,16 @@ function demoLimits() {
             accounts,
         }
     })
-    return { checked_at: iso(now), providers }
+    return { checked_at: iso(now), providers, routing_strategy: "fill-first" }
 }
 
 async function demoApi(path, init) {
     await new Promise((r) => setTimeout(r, 220 + Math.random() * 260))
     if (path.endsWith("/limits")) return demoLimits()
-    if (path.includes("/history")) return demoHistory(new URL(path, location.href).searchParams.get("granularity") || "hour")
+    if (path.includes("/history")) {
+        const q = new URL(path, location.href).searchParams
+        return demoHistory(q.get("granularity") || "hour", q.get("from"))
+    }
     if (path.endsWith("/limits/reset")) {
         await new Promise((r) => setTimeout(r, 1100))
         const { auth_index, credit_id } = JSON.parse(init.body)
