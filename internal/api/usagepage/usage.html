@@ -118,6 +118,8 @@ main { padding-bottom: 48px }
 .notice::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none }
 .notice.bad { border-color: #c52c2a59; background: #c52c2a14 }
 .notice.bad::before { background: var(--bad) }
+.notice.ok { border-color: #10884659; background: #10884614 }
+.notice.ok::before { background: var(--ok) }
 
 /* Segmented controls */
 .seg-ctl { display: inline-flex; padding: 3px; gap: 2px; border-radius: 11px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow) }
@@ -308,6 +310,49 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 .locked h3 { margin: 0 0 6px; color: var(--text); font-size: 17px; letter-spacing: -0.02em }
 .locked p { margin: 0 0 16px }
 
+/* Edit mode */
+.sec-head .controls .btn svg { width: 14px; height: 14px }
+.edit-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 14px; padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: 14px; background: var(--surface-2) }
+.edit-tools p { margin: 0; font-size: 12.5px; color: var(--muted) }
+.edit-tools b { color: var(--text); font-weight: 620 }
+.edit-hint { flex: 1 1 260px }
+.edit-help { flex: 1 0 100%; font-size: 12px; line-height: 1.55 }
+.acct-tools { display: inline-flex; align-items: center; gap: 4px; margin-left: auto }
+.acct-tools .btn.mini { width: 26px; height: 26px; border-radius: 7px }
+.acct-tools .btn.mini svg { width: 14px; height: 14px }
+.grip { display: grid; place-items: center; width: 26px; height: 28px; border-radius: 7px; color: var(--faint); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none }
+.grip:hover { background: var(--surface-2); color: var(--text) }
+.grip svg { width: 12px; height: 16px }
+.pri, .res-in { display: inline-flex; align-items: center; gap: 5px; font: 11.5px var(--mono); color: var(--muted); white-space: nowrap }
+.num-in { width: 54px; height: 26px; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--surface); font: 12px var(--mono); font-variant-numeric: tabular-nums; text-align: right }
+.num-in.changed { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus) }
+.num-in:disabled { opacity: 0.6 }
+.res-in .num-in { width: 50px; height: 22px }
+.acct.is-dragging { position: relative; z-index: 3; background: var(--surface); border-radius: 10px; box-shadow: 0 12px 30px -10px #00000055; cursor: grabbing }
+.acct.is-dragging .grip { cursor: grabbing }
+.acct.drop-before { box-shadow: inset 0 2px 0 var(--focus) }
+.acct.drop-after { box-shadow: inset 0 -2px 0 var(--focus) }
+body.is-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing }
+body.is-dragging * { cursor: grabbing !important }
+.bar-edit { position: relative; margin: 6px 0 5px; touch-action: none; cursor: ew-resize }
+.bar-edit .bar { margin: 0 }
+.bar-edit::before { content: ""; position: absolute; inset: -8px 0 }
+.thumb { position: absolute; top: -5px; bottom: -5px; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 1 }
+.thumb::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 4px; margin-left: -2px; border-radius: 3px; background: var(--text); box-shadow: 0 0 0 2px var(--surface) }
+.thumb:focus-visible { outline: none }
+.thumb:focus-visible::before { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus) }
+.is-editing .bar > i, .is-editing .bar > b { transition: none }
+.is-editing .cell-top { flex-wrap: wrap; row-gap: 4px }
+.is-editing .cell-top > .cell-v { overflow: visible; flex: none }
+.is-editing .cell-top > .res-in { margin-left: auto }
+.is-editing .seg-fill { transition-duration: 0.12s }
+.savebar { position: sticky; bottom: 12px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 14px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); box-shadow: 0 14px 34px -12px #00000050 }
+.save-status { display: inline-flex; align-items: center; gap: 8px; font: 12.5px var(--mono); color: var(--muted) }
+.save-acts { display: flex; gap: 8px; margin-left: auto }
+.save-notice { flex: 1 0 100%; order: 3; padding: 9px 12px; border-radius: 10px; font-size: 12.5px; background: #c52c2a14; border: 1px solid #c52c2a59 }
+.save-notice.warn { background: #bb690014; border-color: #bb690059 }
+.save-notice ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font: 11.5px var(--mono); overflow-wrap: anywhere }
+
 /* Tiles */
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px }
 .tile { position: relative; padding: 14px 16px 15px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); min-width: 0 }
@@ -468,10 +513,15 @@ dialog input:focus-visible { outline-offset: 0 }
     <section class="sec" id="limits" aria-labelledby="limits-title">
         <div class="sec-head">
             <h2 class="sec-title" id="limits-title"><span class="sec-idx">01</span>Subscription windows</h2>
-            <p class="sec-meta" id="limits-meta"></p>
+            <div class="controls">
+                <p class="sec-meta" id="limits-meta"></p>
+                <div id="limits-actions"></div>
+            </div>
         </div>
         <div id="limits-notice"></div>
+        <div id="limits-tools"></div>
         <div id="limits-body" class="providers"></div>
+        <div id="limits-edit"></div>
     </section>
 
     <section class="sec" id="activity" aria-labelledby="activity-title">
@@ -540,7 +590,8 @@ dialog input:focus-visible { outline-offset: 0 }
 <script type="module">
 const KEY_STORAGE = "cpa-usage-management-key"
 const PREFS_STORAGE = "cpa-usage-prefs"
-const API = "/v8/management/observability/usage"
+const MGMT = "/v8/management"
+const API = `${MGMT}/observability/usage`
 const DEMO = new URLSearchParams(location.search).get("demo") === "1"
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -793,6 +844,8 @@ const state = {
     resetPop: null,
     pending: loadPending(),
     hover: null,
+    edit: null,
+    flash: "",
 }
 for (const [id, c] of state.pending) {
     if (!c.dismissed) state.resetUi.set(id, pendingUi(c))
@@ -839,7 +892,7 @@ async function api(path, init = {}) {
     }
     if (!res.ok) {
         const e = body?.error
-        throw new ApiError(res.status, typeof e === "object" ? e?.code : undefined, typeof e === "object" ? e?.message : (e || res.statusText))
+        throw new ApiError(res.status, typeof e === "object" ? e?.code : undefined, typeof e === "object" ? e?.message : (body?.message || e || res.statusText))
     }
     return body
 }
@@ -1058,9 +1111,15 @@ const clampPct = (n) => Math.max(0, Math.min(100, Number(n) || 0))
 const leftOf = (w) => clampPct(100 - (Number(w.used_percent) || 0))
 // Reserves exist only for the 5h and weekly windows; other windows follow upstream limits.
 const RESERVE_FIELD = { five_hour: "quota_5h_remaining_percent", weekly: "quota_weekly_remaining_percent" }
+const RESERVE_KEY = { five_hour: "r5", weekly: "rw" }
 const reserveOf = (a, w) => (RESERVE_FIELD[w.kind] ? clampPct(a[RESERVE_FIELD[w.kind]]) : 0)
 const priorityOf = (a) => Number(a.priority) || 0
-const ROUTING_LABEL = { "fill-first": "Fill-first routing · highest priority first", "weighted-round-robin": "Weighted round-robin routing" }
+const ROUTING_LABEL = { "round-robin": "Round-robin routing", "fill-first": "Fill-first routing · highest priority first", "weighted-round-robin": "Weighted round-robin routing" }
+const ROUTING_ALIAS = { rr: "round-robin", roundrobin: "round-robin", wrr: "weighted-round-robin", weightedroundrobin: "weighted-round-robin", ff: "fill-first", fillfirst: "fill-first" }
+const routingOf = (s) => {
+    const v = String(s ?? "").trim().toLowerCase()
+    return ROUTING_LABEL[v] ? v : ROUTING_ALIAS[v] || "round-robin"
+}
 
 // accountRows lists accounts in routing order (higher priority first) with a
 // stable color, a tier rank when priorities differ, and the fill-first pick.
@@ -1069,7 +1128,7 @@ function accountRows(p) {
     list.sort((x, y) => priorityOf(y.a) - priorityOf(x.a) || x.i - y.i)
     const tiers = [...new Set(list.map((x) => priorityOf(x.a)))]
     let active = null
-    if (state.limits?.routing_strategy === "fill-first" && list.length > 1) {
+    if (!state.edit && routingOf(state.limits?.routing_strategy) === "fill-first" && list.length > 1) {
         const ready = list.filter((x) => !x.a.disabled && x.a.status === "ok")
         // Equal priorities are ordered by an ID this page doesn't see, so only a clear winner is marked.
         if (ready.length === 1 || (ready.length > 1 && priorityOf(ready[1].a) !== priorityOf(ready[0].a))) active = ready[0].a
@@ -1173,16 +1232,19 @@ function cellHtml(a, w) {
     const label = w.kind === "other" ? `<span class="cell-k" title="${esc(w.label)}">${esc(w.label)}</span>` : ""
     const stop = reserve ? `<span class="cell-res${usable <= 0 ? " hit" : ""}" title="Routing skips this account once ${esc(fmtPct(reserve))} is left">${usable <= 0 ? "stopped" : "stops"} at ${esc(fmtPct(reserve))}</span>` : ""
     const aria = `${w.label}: ${fmtPct(left)} left${reserve ? `, routing stops at ${fmtPct(reserve)}` : ""}`
+    const key = state.edit && RESERVE_KEY[w.kind]
+    const bar = `<div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(left, 1)}" aria-label="${esc(aria)}"><i class="held" style="width:${round(Math.min(left, reserve), 2)}%"></i><i style="left:${round(reserve, 2)}%;width:${round(Math.max(0, usable), 2)}%"></i>${reserve ? `<span class="zone" style="width:${round(reserve, 2)}%"></span>` : ""}${elapsed != null ? `<b style="left:${round(100 - elapsed, 2)}%" title="Even pace"></b>` : ""}</div>`
     return `<div class="cell${tone}" data-key="w-${esc(winKey(w))}">
-        <div class="cell-top">${label}<span class="cell-v"><b>${esc(fmtPct(left))}</b> left</span>${stop}</div>
-        <div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(left, 1)}" aria-label="${esc(aria)}"><i class="held" style="width:${round(Math.min(left, reserve), 2)}%"></i><i style="left:${round(reserve, 2)}%;width:${round(Math.max(0, usable), 2)}%"></i>${reserve ? `<span class="zone" style="width:${round(reserve, 2)}%"></span>` : ""}${elapsed != null ? `<b style="left:${round(100 - elapsed, 2)}%" title="Even pace"></b>` : ""}</div>
+        <div class="cell-top">${label}<span class="cell-v"><b>${esc(fmtPct(left))}</b> left</span>${key ? reserveInputHtml(a, w, key, reserve) : stop}</div>
+        ${key ? reserveBarHtml(a, w, key, reserve, bar) : bar}
         <div class="cell-reset">${w.resets_at ? `<b data-rel="${esc(w.resets_at)}">${esc(relTime(w.resets_at))}</b><span class="abs"> · ${esc(absShort(w.resets_at))}</span>` : "no reset time"}</div>
     </div>`
 }
 
-function accountHtml(row, wins, single, cols, sharedError) {
+function accountHtml(row, wins, single, cols, sharedError, ctx = {}) {
     const { a, color, rank, active } = row
     const chips = []
+    const ed = state.edit
     if (active) chips.push(`<span class="chip chip-ok" title="Fill-first routing sends new requests here">In use</span>`)
     if (a.disabled || a.status === "disabled") chips.push(`<span class="chip">Disabled</span>`)
     if (a.status === "cooldown") chips.push(`<span class="chip chip-warn"${a.cooldown_until ? ` title="Until ${esc(absTime(a.cooldown_until))}"` : ""}>Cooldown${a.cooldown_until ? ` <span data-rel="${esc(a.cooldown_until)}">${esc(relTime(a.cooldown_until))}</span>` : ""}</span>`)
@@ -1195,14 +1257,18 @@ function accountHtml(row, wins, single, cols, sharedError) {
     for (const w of a.windows || []) if (!wins.some((x) => winKey(x) === winKey(w))) cells.push(cellHtml(a, w))
     let note = ""
     if (a.error && a.error !== sharedError) note = a.error + (a.source === "headers" ? " Showing the last values seen in responses." : "")
+    const saveError = ed?.errors.get(a.auth_index) || ""
     const sw = rank
         ? `<span class="sw rank" title="Priority ${esc(priorityOf(a))}" aria-hidden="true">${rank}</span><span class="sr">Routing order ${rank}, priority ${esc(priorityOf(a))}.</span>`
         : `<span class="sw" aria-hidden="true"></span>`
-    const cls = ["acct", a.disabled || a.status === "disabled" ? "is-disabled" : "", a.error || a.status === "error" ? "is-stale" : ""].filter(Boolean).join(" ")
-    return `<li class="${cls}" data-key="a-${esc(a.auth_index)}" style="--c:${color}">
-        <div class="acct-head">${sw}<span class="acct-label" title="${esc(a.label)}">${esc(a.label)}</span>${a.plan ? `<span class="acct-plan">${esc(a.plan)}</span>` : ""}${chips.join("")}</div>
+    const dragging = ed?.drag?.id === a.auth_index
+    const cls = ["acct", a.disabled || a.status === "disabled" ? "is-disabled" : "", a.error || a.status === "error" ? "is-stale" : "", dragging ? "is-dragging" : "", ctx.drop ? `drop-${ctx.drop}` : ""].filter(Boolean).join(" ")
+    const lift = dragging ? `;transform:translateY(${round(ed.drag.dy, 1)}px)` : ""
+    return `<li class="${cls}" data-key="a-${esc(a.auth_index)}" data-prov="${esc(ctx.provider || "")}" style="--c:${color}${lift}">
+        <div class="acct-head">${sw}<span class="acct-label" title="${esc(a.label)}">${esc(a.label)}</span>${a.plan ? `<span class="acct-plan">${esc(a.plan)}</span>` : ""}${chips.join("")}${ed ? accountToolsHtml(a, ctx) : ""}</div>
         ${cells.length ? `<div class="cells" style="--cols:${cols}">${cells.join("")}</div>` : ""}
         ${note ? `<p class="acct-note${a.source === "headers" ? "" : " bad"}">${esc(note)}</p>` : ""}
+        ${saveError ? `<p class="acct-note bad" role="alert">Not saved: ${esc(saveError)}</p>` : ""}
     </li>`
 }
 
@@ -1284,7 +1350,7 @@ function resetPopHtml(p, rows) {
 }
 
 function providerHtml(p) {
-    const rows = accountRows(p)
+    const rows = accountRows(state.edit ? { ...p, accounts: (p.accounts || []).map(viewAccount) } : p)
     const wins = p.windows || []
     const cols = wins.length || 2
     const errors = rows.map((r) => r.a.error).filter(Boolean)
@@ -1299,7 +1365,7 @@ function providerHtml(p) {
             ${resetButtonHtml(p, rows)}
         </header>
         <div class="gauges" style="--cols:${cols}">${wins.map((w) => gaugeHtml(p, w, rows)).join("") || `<p class="muted">No windows reported yet.</p>`}</div>
-        <ul class="accts">${rows.map((r) => accountHtml(r, wins, rows.length === 1, cols, shared)).join("")}</ul>
+        <ul class="accts">${rows.map((r, i) => accountHtml(r, wins, rows.length === 1 && !state.edit, cols, shared, { provider: p.provider, index: i, count: rows.length, drop: dropSide(p.provider, rows, r) })).join("")}</ul>
         ${sharedNote ? `<p class="prov-note">${esc(sharedNote)}</p>` : ""}
     </article>`
 }
@@ -1307,6 +1373,7 @@ function providerHtml(p) {
 function renderLimits() {
     const body = $("#limits-body")
     const notice = $("#limits-notice")
+    renderEditUi()
     if (!state.key) {
         hideResetPop()
         patch(notice, "")
@@ -1320,11 +1387,12 @@ function renderLimits() {
         else patch(body, "")
         return
     }
-    patch(notice, state.limitsErr ? `<div class="notice">Couldn't refresh limits: ${esc(state.limitsErr)}. Showing the last data.</div>` : "")
+    patch(notice, (state.limitsErr ? `<div class="notice" data-key="err">Couldn't refresh limits: ${esc(state.limitsErr)}. Showing the last data.</div>` : "") + (state.flash ? `<div class="notice ok" data-key="flash" role="status">${esc(state.flash)}</div>` : ""))
     const providers = state.limits.providers || []
     patch(body, providers.length ? providers.map(providerHtml).join("") : `<div class="locked" data-key="empty"><h3>No accounts</h3><p>No Claude or Codex OAuth accounts are configured.</p></div>`)
-    $("#limits-meta").textContent = ROUTING_LABEL[state.limits.routing_strategy] || "Round-robin routing"
+    $("#limits-meta").textContent = ROUTING_LABEL[state.edit ? state.edit.routing : routingOf(state.limits.routing_strategy)]
     renderResetPop()
+    syncEditInputs()
 }
 
 // ---------- Reset popover ----------
@@ -1435,6 +1503,11 @@ function onLimitsClick(e) {
     const id = btn.dataset.id
     switch (btn.dataset.action) {
         case "unlock": openAuth(); break
+        case "edit-start": startEdit(); break
+        case "edit-cancel": cancelEdit(); break
+        case "edit-save": saveEdit(); break
+        case "move-up": moveRow(id, -1); break
+        case "move-down": moveRow(id, 1); break
         case "resets": {
             const provider = btn.dataset.provider
             if (state.resetPop === provider) closeResetPop(true)
@@ -1476,8 +1549,492 @@ function onLimitsClick(e) {
         }
     }
 }
-$("#limits-body").addEventListener("click", onLimitsClick)
+$("#limits").addEventListener("click", onLimitsClick)
 resetPop.addEventListener("click", onLimitsClick)
+
+// ---------- Edit mode ----------
+
+// Routing strategy, account priority and per-window reserves are edited as a
+// draft over the live data and saved through the v8 config and credential APIs.
+// Reserves are the percentage a window must still have left; 0 disables one.
+const ROUTING = [
+    { value: "round-robin", label: "Round-robin", hint: "Rotates through the accounts of the highest available priority tier." },
+    { value: "weighted-round-robin", label: "Weighted", hint: "Rotates within the highest available tier, favoring accounts with a higher weight." },
+    { value: "fill-first", label: "Fill-first", hint: "Keeps using the first account of the highest available tier until it is unavailable." },
+]
+const DRAFT_FIELD = { priority: "priority", r5: "quota_5h_remaining_percent", rw: "quota_weekly_remaining_percent" }
+const MAX_PRIORITY = 1_000_000
+
+const allAccounts = () => (state.limits?.providers || []).flatMap((p) => p.accounts || [])
+const valsOf = (a) => ({ priority: Math.trunc(priorityOf(a)), r5: reserveField(a, "r5"), rw: reserveField(a, "rw") })
+const reserveField = (a, key) => clampPct(a[DRAFT_FIELD[key]])
+
+function startEdit() {
+    if (!state.limits || state.edit) return
+    const draft = new Map()
+    const base = new Map()
+    for (const a of allAccounts()) {
+        draft.set(a.auth_index, valsOf(a))
+        base.set(a.auth_index, valsOf(a))
+    }
+    const routing = routingOf(state.limits.routing_strategy)
+    state.flash = ""
+    state.edit = { draft, base, routing, baseRouting: routing, ids: new Map(), errors: new Map(), busy: null, notice: null, drag: null, cancelDrag: null, announce: "" }
+    renderLimits()
+    document.querySelector('#routing-ctl input:checked')?.focus()
+}
+
+function cancelEdit() {
+    const ed = state.edit
+    if (!ed || ed.busy) return
+    ed.cancelDrag?.()
+    state.edit = null
+    renderLimits()
+    document.querySelector('[data-focus="edit-start"]')?.focus()
+}
+
+// viewAccount overlays the draft on an account so dials, bars and order preview
+// the edit before it is saved.
+function viewAccount(a) {
+    const v = state.edit.draft.get(a.auth_index)
+    if (!v) return a
+    const out = { ...a, priority: v.priority, quota_5h_remaining_percent: v.r5, quota_weekly_remaining_percent: v.rw }
+    out.limit_reached = (a.windows || []).some((w) => {
+        const r = reserveOf(out, w)
+        return r > 0 && leftOf(w) <= r
+    })
+    return out
+}
+
+// editDiff lists what differs from the values last read or saved. Only changed
+// fields are sent, so an untouched legacy reserve keeps its stored form.
+function editDiff(ed) {
+    const accounts = []
+    let count = 0
+    for (const a of allAccounts()) {
+        const d = ed.draft.get(a.auth_index)
+        const b = ed.base.get(a.auth_index)
+        if (!d || !b) continue
+        const patch = {}
+        const set = {}
+        for (const key of Object.keys(DRAFT_FIELD)) {
+            if (d[key] === b[key]) continue
+            patch[DRAFT_FIELD[key]] = d[key]
+            set[key] = d[key]
+            count++
+        }
+        if (Object.keys(set).length) accounts.push({ a, patch, set })
+    }
+    const routing = ed.routing !== ed.baseRouting ? ed.routing : ""
+    if (routing) count++
+    return { routing, accounts, count }
+}
+
+function dirtyOf(key, id) {
+    const d = state.edit?.draft.get(id)
+    const b = state.edit?.base.get(id)
+    return !!d && !!b && d[key] !== b[key]
+}
+
+// ----- Row markup -----
+
+const ICONS = {
+    up: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 10 4-4 4 4"/></svg>`,
+    down: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>`,
+    grip: `<svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="3" r="1.2"/><circle cx="8.5" cy="3" r="1.2"/><circle cx="3.5" cy="8" r="1.2"/><circle cx="8.5" cy="8" r="1.2"/><circle cx="3.5" cy="13" r="1.2"/><circle cx="8.5" cy="13" r="1.2"/></svg>`,
+    pencil: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5 12.5 5.5M3 13l.5-2.5L11 3a1.4 1.4 0 0 1 2 2l-7.5 7.5z"/></svg>`,
+}
+
+function accountToolsHtml(a, ctx) {
+    const id = esc(a.auth_index)
+    const busy = state.edit.busy ? " disabled" : ""
+    const move = (action, icon, text, off) => `<button class="btn btn-ghost btn-icon mini" type="button" data-action="${action}" data-id="${id}" data-focus="${action}-${id}" aria-label="${esc(text)}"${off || busy ? " disabled" : ""}>${icon}</button>`
+    return `<span class="acct-tools">
+        <span class="grip" data-drag="${id}" data-provider="${esc(ctx.provider)}" title="Drag to reorder" aria-hidden="true">${ICONS.grip}</span>
+        ${move("move-up", ICONS.up, `Move ${a.label} up`, ctx.index === 0)}${move("move-down", ICONS.down, `Move ${a.label} down`, ctx.index === ctx.count - 1)}
+        <label class="pri" title="Higher priority numbers are used first. Accounts sharing a number share a tier.">Priority <input class="num-in${dirtyOf("priority", a.auth_index) ? " changed" : ""}" type="number" inputmode="numeric" min="0" max="${MAX_PRIORITY}" step="1" data-edit="priority" data-id="${id}" value="${priorityOf(a)}" aria-label="${esc(a.label)} priority, higher is used first"${busy}></label>
+    </span>`
+}
+
+function reserveInputHtml(a, w, key, reserve) {
+    const id = esc(a.auth_index)
+    return `<label class="res-in" title="Routing skips this account once this much of the window is left. 0 turns the reserve off.">stop at <input class="num-in${dirtyOf(key, a.auth_index) ? " changed" : ""}" type="number" inputmode="decimal" min="0" max="100" step="any" data-edit="${key}" data-id="${id}" value="${round(reserve, 1)}" aria-label="${esc(a.label)} ${esc(w.label)}: routing stops at this percent left, 0 disables"${state.edit.busy ? " disabled" : ""}>%</label>`
+}
+
+function reserveBarHtml(a, w, key, reserve, bar) {
+    const id = esc(a.auth_index)
+    const text = reserve ? `routing stops at ${fmtPct(reserve)} left` : "no reserve"
+    return `<div class="bar-edit" data-id="${id}" data-field="${key}">${bar}<span class="thumb" role="slider" tabindex="0" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(reserve, 1)}" aria-valuetext="${esc(text)}" aria-label="${esc(a.label)} ${esc(w.label)} reserve, percent left" data-id="${id}" data-field="${key}" style="left:${round(reserve, 2)}%"></span></div>`
+}
+
+// dropSide marks where a row drag would land among the other rows.
+function dropSide(provider, rows, row) {
+    const drag = state.edit?.drag
+    if (!drag || drag.provider !== provider) return ""
+    const others = rows.filter((r) => r.a.auth_index !== drag.id)
+    if (!others.length || drag.to === rows.findIndex((r) => r.a.auth_index === drag.id)) return ""
+    if (drag.to < others.length) return others[drag.to] === row ? "before" : ""
+    return others[others.length - 1] === row ? "after" : ""
+}
+
+// ----- Toolbar and save bar -----
+
+function editCount() {
+    return state.edit ? editDiff(state.edit).count : 0
+}
+
+function renderEditUi() {
+    const ed = state.edit && state.key && state.limits ? state.edit : null
+    $("#limits").classList.toggle("is-editing", !!ed)
+    patch($("#limits-actions"), state.key && state.limits && !ed ? `<button class="btn" type="button" data-action="edit-start" data-focus="edit-start" data-key="edit-start">${ICONS.pencil}Edit</button>` : "")
+    patch($("#limits-tools"), ed ? editToolsHtml(ed) : "")
+    patch($("#limits-edit"), ed ? saveBarHtml(ed) : "")
+}
+
+function editToolsHtml(ed) {
+    const cur = ROUTING.find((r) => r.value === ed.routing) || ROUTING[0]
+    const radios = ROUTING.map((r) => `<label><input type="radio" name="routing" value="${r.value}" data-edit="routing"${ed.routing === r.value ? " checked" : ""}${ed.busy ? " disabled" : ""}><span>${r.label}</span></label>`).join("")
+    return `<div class="edit-tools" data-key="edit-tools">
+        <fieldset class="seg-ctl" id="routing-ctl"><legend>Routing strategy</legend>${radios}</fieldset>
+        <p class="edit-hint"><b>${esc(cur.label)}.</b> ${esc(cur.hint)}</p>
+        <p class="edit-help"><b>Priority</b> comes first for every strategy: the highest number with an available account is used, then the next. Drag <b>⠿</b>, use the arrows, or type a number to share a tier. <b>Reserve</b> is the share of a window that must stay unused: drag a bar marker or type the percent <b>left</b> where routing stops. 0 turns it off.</p>
+    </div>`
+}
+
+function saveBarHtml(ed) {
+    const n = editCount()
+    const status = ed.busy
+        ? `<span class="spin" aria-hidden="true"></span>Saving ${ed.busy.done} of ${ed.busy.total}…`
+        : n ? `${n} unsaved change${n === 1 ? "" : "s"}` : "No changes"
+    const note = ed.notice
+        ? `<div class="save-notice ${ed.notice.tone}" role="alert">${esc(ed.notice.text)}${ed.notice.items?.length ? `<ul>${ed.notice.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>`
+        : ""
+    return `<div class="savebar" data-key="savebar" role="region" aria-label="Unsaved routing changes">
+        <div class="save-status">${status}</div>
+        <div class="save-acts">
+            <button class="btn btn-ghost" type="button" data-action="edit-cancel"${ed.busy ? " disabled" : ""}>Cancel</button>
+            <button class="btn btn-primary" type="button" data-action="edit-save"${ed.busy || !n ? " disabled" : ""}>${ed.retry ? "Retry save" : "Save changes"}</button>
+        </div>
+        ${note}
+        <span class="sr" role="status" aria-live="polite">${esc(ed.announce)}</span>
+    </div>`
+}
+
+// Uncontrolled inputs keep what the user typed; this restores the draft into
+// the ones that are not being edited, e.g. after Cancel or a failed entry.
+function syncEditInputs() {
+    for (const el of document.querySelectorAll("#limits [data-edit]")) {
+        if (el.type === "radio") el.checked = el.hasAttribute("checked")
+        else if (el !== document.activeElement) el.value = el.getAttribute("value") ?? ""
+    }
+}
+
+let editFrame = 0
+function scheduleEditRender() {
+    if (editFrame) return
+    editFrame = requestAnimationFrame(() => {
+        editFrame = 0
+        if (state.edit) renderLimits()
+    })
+}
+
+// ----- Draft changes -----
+
+function setDraft(id, key, value) {
+    const ed = state.edit
+    const v = ed?.draft.get(id)
+    if (!v || ed.busy) return
+    v[key] = value
+    ed.errors.delete(id)
+    if (ed.notice?.tone === "warn") ed.notice = null
+    ed.retry = ed.retry && ed.errors.size > 0
+}
+
+// assignTiers gives each group of accounts (listed best first) a strictly
+// lower priority than the one above, keeping every value that still fits.
+// Groups with a null preference take the free integers around them. Returns
+// null when there is no room, so the caller can renumber the whole provider.
+function assignTiers(groups) {
+    const vals = []
+    let last = Infinity
+    for (const g of groups) {
+        if (g.pref != null && g.pref < last) {
+            vals.push(g.pref)
+            last = g.pref
+        } else vals.push(null)
+    }
+    for (let i = 0; i < vals.length;) {
+        if (vals[i] != null) { i++; continue }
+        let j = i
+        while (j < vals.length && vals[j] == null) j++
+        const k = j - i
+        const hi = i > 0 ? vals[i - 1] : Infinity
+        const lo = j < vals.length ? vals[j] : -1
+        const top = hi === Infinity ? lo + k : hi - 1
+        if (top - (k - 1) <= lo) return null
+        for (let m = 0; m < k; m++) vals[i + m] = top - m
+        i = j
+    }
+    return vals
+}
+
+const draftPriority = (a) => state.edit.draft.get(a.auth_index)?.priority ?? priorityOf(a)
+
+function providerOrder(provider) {
+    const p = (state.limits?.providers || []).find((x) => x.provider === provider)
+    return (p?.accounts || []).map((a, i) => ({ a, i })).sort((x, y) => draftPriority(y.a) - draftPriority(x.a) || x.i - y.i).map((x) => x.a)
+}
+
+// reorderTo moves one account to `to` among the others. The moved account
+// becomes its own tier; accounts that shared a tier and stay adjacent keep
+// sharing it, and priorities that still fit are not touched.
+function reorderTo(provider, id, to) {
+    const ed = state.edit
+    const order = providerOrder(provider)
+    const from = order.findIndex((a) => a.auth_index === id)
+    if (from < 0) return false
+    const [moved] = order.splice(from, 1)
+    const at = Math.max(0, Math.min(order.length, to))
+    if (at === from) return false
+    order.splice(at, 0, moved)
+    const groups = []
+    for (const a of order) {
+        const pref = a === moved ? null : draftPriority(a)
+        const last = groups[groups.length - 1]
+        if (pref != null && last && last.pref === pref) last.ids.push(a.auth_index)
+        else groups.push({ ids: [a.auth_index], pref })
+    }
+    let vals = assignTiers(groups)
+    if (!vals) {
+        const floor = Math.max(0, Math.min(...order.map(draftPriority)))
+        vals = groups.map((_, i) => floor + groups.length - 1 - i)
+    }
+    groups.forEach((g, i) => { for (const gid of g.ids) setDraft(gid, "priority", vals[i]) })
+    ed.announce = `Moved ${moved.label} to position ${at + 1} of ${order.length}.`
+    return true
+}
+
+function moveRow(id, delta) {
+    const ed = state.edit
+    const a = allAccounts().find((x) => x.auth_index === id)
+    if (!ed || ed.busy || !a) return
+    const provider = (state.limits.providers || []).find((p) => (p.accounts || []).includes(a))?.provider
+    const from = providerOrder(provider).findIndex((x) => x.auth_index === id)
+    reorderTo(provider, id, from + delta)
+    renderLimits()
+    const btn = document.querySelector(`[data-focus="${delta < 0 ? "move-up" : "move-down"}-${CSS.escape(id)}"]:not(:disabled)`) || document.querySelector(`[data-focus="${delta < 0 ? "move-down" : "move-up"}-${CSS.escape(id)}"]:not(:disabled)`)
+    btn?.focus()
+}
+
+// ----- Pointer dragging -----
+
+// trackPointer follows one pointer on the window, since the dragged markup is
+// re-rendered while it moves. The returned function ends the drag early.
+function trackPointer(pointerId, onMove, onEnd) {
+    let done = false
+    const stop = (ok) => {
+        if (done) return
+        done = true
+        window.removeEventListener("pointermove", move)
+        window.removeEventListener("pointerup", up)
+        window.removeEventListener("pointercancel", cancel)
+        document.body.classList.remove("is-dragging")
+        onEnd(ok)
+    }
+    const move = (e) => { if (e.pointerId === pointerId) onMove(e) }
+    const up = (e) => { if (e.pointerId === pointerId) stop(true) }
+    const cancel = (e) => { if (e.pointerId === pointerId) stop(false) }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+    window.addEventListener("pointercancel", cancel)
+    document.body.classList.add("is-dragging")
+    return () => stop(false)
+}
+
+function startReserveDrag(e, wrap) {
+    const ed = state.edit
+    const { id, field } = wrap.dataset
+    e.preventDefault()
+    wrap.querySelector(".thumb")?.focus({ preventScroll: true })
+    const set = (clientX) => {
+        const r = wrap.getBoundingClientRect()
+        if (!r.width) return
+        setDraft(id, field, Math.round(clampPct(((clientX - r.left) / r.width) * 100)))
+        scheduleEditRender()
+    }
+    set(e.clientX)
+    ed.cancelDrag = trackPointer(e.pointerId, (ev) => set(ev.clientX), () => {
+        ed.cancelDrag = null
+        renderLimits()
+    })
+}
+
+function startRowDrag(e, grip) {
+    const ed = state.edit
+    const { drag: id, provider } = grip.dataset
+    const rows = [...document.querySelectorAll(`#limits-body li.acct[data-prov="${CSS.escape(provider)}"]`)]
+    const li = grip.closest("li.acct")
+    const others = rows.filter((x) => x !== li)
+    const mids = others.map((x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2 + scrollY })
+    const from = rows.indexOf(li)
+    if (from < 0) return
+    e.preventDefault()
+    const startY = e.clientY + scrollY
+    let y = e.clientY
+    let raf = 0
+    ed.drag = { id, provider, dy: 0, to: from }
+    const update = () => {
+        const docY = y + scrollY
+        ed.drag.dy = docY - startY
+        ed.drag.to = mids.filter((m) => m < docY).length
+        scheduleEditRender()
+    }
+    // Hold near the viewport edge to keep scrolling.
+    const scroll = () => {
+        const dy = y < 56 ? -14 : y > innerHeight - 56 ? 14 : 0
+        if (dy) { scrollBy(0, dy); update() }
+        raf = requestAnimationFrame(scroll)
+    }
+    raf = requestAnimationFrame(scroll)
+    ed.cancelDrag = trackPointer(e.pointerId, (ev) => { y = ev.clientY; update() }, (ok) => {
+        cancelAnimationFrame(raf)
+        const drag = ed.drag
+        ed.drag = null
+        ed.cancelDrag = null
+        if (ok && drag.to !== from) reorderTo(provider, id, drag.to)
+        renderLimits()
+    })
+    update()
+}
+
+$("#limits").addEventListener("pointerdown", (e) => {
+    const ed = state.edit
+    if (!ed || ed.busy || ed.cancelDrag || e.button > 0) return
+    const grip = e.target.closest(".grip[data-drag]")
+    if (grip) return startRowDrag(e, grip)
+    const wrap = e.target.closest(".bar-edit")
+    if (wrap) startReserveDrag(e, wrap)
+})
+
+$("#limits").addEventListener("keydown", (e) => {
+    const thumb = e.target.closest?.(".thumb")
+    if (!thumb || !state.edit || state.edit.busy) return
+    const { id, field } = thumb.dataset
+    const cur = state.edit.draft.get(id)?.[field]
+    if (cur == null) return
+    const step = e.shiftKey ? 10 : 1
+    const next = { ArrowLeft: cur - step, ArrowDown: cur - step, ArrowRight: cur + step, ArrowUp: cur + step, PageDown: cur - 10, PageUp: cur + 10, Home: 0, End: 100 }[e.key]
+    if (next == null) return
+    e.preventDefault()
+    setDraft(id, field, round(clampPct(next), 1))
+    renderLimits()
+})
+
+$("#limits").addEventListener("change", (e) => {
+    const el = e.target.closest?.("[data-edit]")
+    const ed = state.edit
+    if (!el || !ed || ed.busy) return
+    const key = el.dataset.edit
+    if (key === "routing") {
+        ed.routing = el.value
+        renderLimits()
+        return
+    }
+    const id = el.dataset.id
+    const cur = ed.draft.get(id)
+    if (!cur) return
+    const raw = el.value.trim()
+    const n = key === "priority" ? Number(raw) : raw === "" ? 0 : Number(raw)
+    const ok = key === "priority" ? raw !== "" && Number.isInteger(n) && n >= 0 && n <= MAX_PRIORITY : Number.isFinite(n) && n >= 0 && n <= 100
+    if (!ok) {
+        ed.notice = { tone: "warn", text: key === "priority" ? "Priority must be a whole number from 0 up." : "A reserve is the percent left, from 0 to 100. Use 0 to turn it off.", items: [] }
+        el.value = String(cur[key])
+        renderLimits()
+        return
+    }
+    setDraft(id, key, key === "priority" ? n : round(n, 1))
+    renderLimits()
+})
+
+window.addEventListener("beforeunload", (e) => {
+    if (editCount() > 0) e.preventDefault()
+})
+
+// ----- Saving -----
+
+async function credentialId(authIndex) {
+    const res = await api(`${MGMT}/credentials?${new URLSearchParams({ auth_index: authIndex })}`)
+    const file = (res?.files || []).find((f) => f.auth_index === authIndex)
+    if (!file?.id) throw new ApiError(404, "not_found", "Credential not found")
+    return file.id
+}
+
+// The strategy and each account are separate requests, so a save can partly
+// succeed. Saved values become the new baseline and failures stay in the draft
+// for another try. Signing out clears the draft, which ends the loop quietly.
+async function saveEdit() {
+    const ed = state.edit
+    if (!ed || ed.busy) return
+    const { routing, accounts, count } = editDiff(ed)
+    if (!count) return
+    const total = (routing ? 1 : 0) + accounts.length
+    const live = () => state.edit === ed
+    const failed = []
+    ed.retry = false
+    ed.busy = { done: 0, total }
+    ed.errors.clear()
+    ed.notice = null
+    ed.announce = ""
+    renderLimits()
+    if (routing) {
+        try {
+            await api(`${MGMT}/config/routing/strategy`, { method: "PUT", body: JSON.stringify(routing) })
+            if (!live()) return
+            ed.baseRouting = routing
+        } catch (err) {
+            if (!live()) return
+            failed.push(`Routing strategy: ${err.message}`)
+        }
+        ed.busy.done++
+        renderLimits()
+    }
+    for (const { a, patch: body, set } of accounts) {
+        try {
+            let name = ed.ids.get(a.auth_index)
+            if (!name) {
+                name = await credentialId(a.auth_index)
+                if (!live()) return
+                ed.ids.set(a.auth_index, name)
+            }
+            await api(`${MGMT}/credentials/fields`, { method: "PATCH", body: JSON.stringify({ name, ...body }) })
+            if (!live()) return
+            Object.assign(ed.base.get(a.auth_index), set)
+        } catch (err) {
+            if (!live()) return
+            ed.errors.set(a.auth_index, err.message)
+            failed.push(`${a.label}: ${err.message}`)
+        }
+        ed.busy.done++
+        renderLimits()
+    }
+    ed.busy = null
+    if (failed.length) {
+        ed.retry = true
+        ed.notice = { tone: "bad", text: `${total - failed.length} of ${total} saved. The rest is kept here, so you can retry.`, items: failed }
+        ed.announce = `${failed.length} changes could not be saved.`
+        renderLimits()
+        return
+    }
+    state.edit = null
+    state.flash = "Saved. Routing uses the new settings now."
+    renderLimits()
+    document.querySelector('[data-focus="edit-start"]')?.focus()
+    loadLimits()
+    setTimeout(() => {
+        state.flash = ""
+        renderLimits()
+    }, 5000)
+}
 
 // ---------- Activity ----------
 
@@ -1874,6 +2431,11 @@ setInterval(tick, 1000)
 
 document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return
+    if (state.edit?.cancelDrag) {
+        e.preventDefault()
+        state.edit.cancelDrag()
+        return
+    }
     if (!state.resetPop) return
     // Escape backs out of a pending confirmation before closing the popover.
     const confirming = (resetPopProvider()?.accounts || []).find((a) => state.resetUi.get(a.auth_index)?.phase === "confirm")
@@ -1903,6 +2465,9 @@ function forgetKey(message) {
     state.limitsAt = state.historyAt = 0
     state.limitsErr = state.historyErr = null
     state.resetUi.clear()
+    state.edit?.cancelDrag?.()
+    state.edit = null
+    state.flash = ""
     hideResetPop()
     stopLive()
     renderAll()
@@ -2069,6 +2634,7 @@ function demoInit() {
     })
     demo = {
         t0,
+        routing: "fill-first",
         providers: [
             { provider: "claude", label: "Claude", accounts: [
                 acct("cl-7f3a", "personal@example.com", "Max 20x", "ok", "probe", 8000, "", [["five_hour", "5h", 82, 2 * HOUR + 34 * MIN, 300], ["weekly", "Weekly", 58, 4 * DAY + 7 * HOUR, 10080], ["other", "Weekly · Opus", 71, 4 * DAY + 7 * HOUR, 10080]], [1, "cr-a1", 6 * DAY + 3 * HOUR], 0, { priority: 1, r5: 20, rw: 20 }),
@@ -2140,7 +2706,7 @@ function demoLimits() {
             accounts,
         }
     })
-    return { checked_at: iso(now), providers, routing_strategy: "fill-first" }
+    return { checked_at: iso(now), providers, routing_strategy: demo.routing }
 }
 
 async function demoApi(path, init) {
@@ -2149,6 +2715,32 @@ async function demoApi(path, init) {
     if (path.includes("/history")) {
         const q = new URL(path, location.href).searchParams
         return demoHistory(q.get("granularity") || "hour", q.get("from"))
+    }
+    // Edits only change this page's in-memory demo data, never the real config.
+    if (path.endsWith("/config/routing/strategy") && init.method === "PUT") {
+        const value = JSON.parse(init.body)
+        if (!ROUTING.some((r) => r.value === value)) throw new ApiError(400, "invalid_config", "invalid strategy")
+        demo.routing = value
+        return { status: "ok", "config-version": 8 }
+    }
+    if (path.startsWith(`${MGMT}/credentials?`)) {
+        const idx = new URL(path, location.href).searchParams.get("auth_index")
+        const found = demo.providers.flatMap((p) => p.accounts).some((x) => x.auth_index === idx)
+        return { files: found ? [{ id: `${idx}.json`, name: `${idx}.json`, auth_index: idx }] : [] }
+    }
+    if (path.endsWith("/credentials/fields") && init.method === "PATCH") {
+        const { name, ...fields } = JSON.parse(init.body)
+        const a = demo.providers.flatMap((p) => p.accounts).find((x) => `${x.auth_index}.json` === name)
+        if (!a) throw new ApiError(404, "", "auth file not found")
+        // The first save for this account fails, so retrying a partial save can be tried.
+        if (a.auth_index === "cl-e4a9" && !a.failedOnce) {
+            a.failedOnce = true
+            throw new ApiError(500, "", "failed to update auth: credential file is read-only (demo)")
+        }
+        if ("priority" in fields) a.priority = fields.priority
+        if ("quota_5h_remaining_percent" in fields) a.r5 = fields.quota_5h_remaining_percent
+        if ("quota_weekly_remaining_percent" in fields) a.rw = fields.quota_weekly_remaining_percent
+        return { status: "ok" }
     }
     if (path.endsWith("/limits/reset")) {
         await new Promise((r) => setTimeout(r, 1100))
