@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
@@ -207,16 +207,14 @@ func TestAuthWeight_InvalidAndOverflowValuesAreExcluded(t *testing.T) {
 	}
 }
 
-func TestPickSmoothWeightedAuth_SaturatesCorruptState(t *testing.T) {
+func TestSmoothWeightedStateCharge_SaturatesAndClampsCorruptState(t *testing.T) {
 	t.Parallel()
 
-	current := map[string]int64{"a": math.MaxInt64, "b": math.MinInt64}
-	picked := pickSmoothWeightedAuth([]*Auth{{ID: "a"}, {ID: "b"}}, current)
-	if picked == nil {
-		t.Fatal("pickSmoothWeightedAuth() returned nil")
-	}
-	if current["a"] != math.MaxInt64-2 || current["b"] != math.MinInt64+1 {
-		t.Fatalf("current state = %#v, want saturated arithmetic", current)
+	state := weightedPoolForTest("route", map[string]int64{"a": 1, "b": 1}, map[string]int64{"a": math.MaxInt64, "b": math.MinInt64})
+	state.charge(0, false)
+	limit := maxSmoothWeightedCreditRounds * 2
+	if state.currentForTest()["a"] != limit || state.currentForTest()["b"] != -limit {
+		t.Fatalf("current state = %#v, want saturated and clamped arithmetic", state.currentForTest())
 	}
 }
 
@@ -566,13 +564,13 @@ func TestModelCooldownErrorRetainsAbsoluteDeadline(t *testing.T) {
 	if first, second := err.Error(), err.Error(); first != second {
 		t.Fatalf("serializing the same cooldown changed its deadline: %s != %s", first, second)
 	}
-	if got := gjson.Get(err.Error(), "error.retry_at").String(); got != deadline.Format(time.RFC3339Nano) {
+	if got := ojson.Get(err.Error(), "error.retry_at").String(); got != deadline.Format(time.RFC3339Nano) {
 		t.Fatalf("serialized retry_at = %q, want %q", got, deadline.Format(time.RFC3339Nano))
 	}
 	unnamed := newModelCooldownError("", "claude", time.Minute)
 	unnamed.retryAt = time.Date(2033, time.May, 19, 7, 20, 0, 0, time.UTC)
 	restored := restoreModelCooldownErrorModel(unnamed, "claude-opus-5-5")
-	if got := gjson.Get(restored.Error(), "error.retry_at").String(); got != unnamed.RetryAt().Format(time.RFC3339Nano) {
+	if got := ojson.Get(restored.Error(), "error.retry_at").String(); got != unnamed.RetryAt().Format(time.RFC3339Nano) {
 		t.Fatalf("restoring the requested model changed retry_at: %s", restored)
 	}
 }

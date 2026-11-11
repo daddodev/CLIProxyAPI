@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -17,7 +18,6 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/tidwall/gjson"
 )
 
 func TestClaudeErrorTypeFromStatus(t *testing.T) {
@@ -86,13 +86,13 @@ func TestClaudeIncompleteStreamError(t *testing.T) {
 				_, body, _ = strings.Cut(body, prefix)
 				body = strings.TrimSpace(body)
 			}
-			if got := gjson.Get(body, "type").String(); got != "error" {
+			if got := ojson.Get(body, "type").String(); got != "error" {
 				t.Errorf("type = %q, want error", got)
 			}
-			if got := gjson.Get(body, "error.type").String(); got != "timeout_error" {
+			if got := ojson.Get(body, "error.type").String(); got != "timeout_error" {
 				t.Errorf("error.type = %q, want timeout_error", got)
 			}
-			if got := gjson.Get(body, "error.message").String(); got != message {
+			if got := ojson.Get(body, "error.message").String(); got != message {
 				t.Errorf("error.message = %q, want %q", got, message)
 			}
 		})
@@ -154,7 +154,7 @@ func TestClaudeErrorMarksWrappedMissingThreadForClientReplay(t *testing.T) {
 	if errMarshal != nil {
 		t.Fatalf("marshal Claude error: %v", errMarshal)
 	}
-	if got := gjson.GetBytes(body, "error.details.error_code").String(); got != "thread_not_found" {
+	if got := ojson.GetBytesNoCopy(body, "error.details.error_code").String(); got != "thread_not_found" {
 		t.Fatalf("error.details.error_code = %q, want thread_not_found; body=%s", got, body)
 	}
 }
@@ -170,7 +170,7 @@ func TestClaudeErrorMarksMissingThreadForClientReplay(t *testing.T) {
 	if errMarshal != nil {
 		t.Fatalf("marshal Claude error: %v", errMarshal)
 	}
-	if got := gjson.GetBytes(body, "error.details.error_code").String(); got != "thread_not_found" {
+	if got := ojson.GetBytesNoCopy(body, "error.details.error_code").String(); got != "thread_not_found" {
 		t.Fatalf("error.details.error_code = %q, want thread_not_found; body=%s", got, body)
 	}
 }
@@ -186,7 +186,7 @@ func TestClaudeErrorMarksPlainTextMissingThreadForClientReplay(t *testing.T) {
 	if errMarshal != nil {
 		t.Fatalf("marshal Claude error: %v", errMarshal)
 	}
-	if got := gjson.GetBytes(body, "error.details.error_code").String(); got != "thread_not_found" {
+	if got := ojson.GetBytesNoCopy(body, "error.details.error_code").String(); got != "thread_not_found" {
 		t.Fatalf("error.details.error_code = %q, want thread_not_found; body=%s", got, body)
 	}
 }
@@ -213,7 +213,7 @@ func TestClaudeErrorMarksStructuredExecutorMissingThreadForClientReplay(t *testi
 	if errMarshal != nil {
 		t.Fatalf("marshal Claude error: %v", errMarshal)
 	}
-	if got := gjson.GetBytes(body, "error.details.error_code").String(); got != "thread_not_found" {
+	if got := ojson.GetBytesNoCopy(body, "error.details.error_code").String(); got != "thread_not_found" {
 		t.Fatalf("error.details.error_code = %q, want thread_not_found; body=%s", got, body)
 	}
 }
@@ -231,7 +231,7 @@ func TestWriteClaudeDirectErrorMarksMissingThreadForClientReplay(t *testing.T) {
 
 	handler.WriteErrorResponse(c, msg)
 
-	if got := gjson.GetBytes(recorder.Body.Bytes(), "error.details.error_code").String(); got != "thread_not_found" {
+	if got := ojson.GetBytesNoCopy(recorder.Body.Bytes(), "error.details.error_code").String(); got != "thread_not_found" {
 		t.Fatalf("error.details.error_code = %q, want thread_not_found; body=%s", got, recorder.Body.Bytes())
 	}
 }
@@ -252,13 +252,13 @@ func TestWriteClaudeErrorResponseUsesClaudeEnvelope(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 	body := recorder.Body.Bytes()
-	if got := gjson.GetBytes(body, "type").String(); got != "error" {
+	if got := ojson.GetBytesNoCopy(body, "type").String(); got != "error" {
 		t.Fatalf("type = %q, want error; body=%s", got, body)
 	}
-	if got := gjson.GetBytes(body, "error.type").String(); got != "invalid_request_error" {
+	if got := ojson.GetBytesNoCopy(body, "error.type").String(); got != "invalid_request_error" {
 		t.Fatalf("error.type = %q, want invalid_request_error; body=%s", got, body)
 	}
-	if got := gjson.GetBytes(body, "error.message").String(); got != "Your input exceeds the context window of this model. Please adjust your input and try again." {
+	if got := ojson.GetBytesNoCopy(body, "error.message").String(); got != "Your input exceeds the context window of this model. Please adjust your input and try again." {
 		t.Fatalf("error.message = %q; body=%s", got, body)
 	}
 }
@@ -290,7 +290,7 @@ func TestWriteClaudeErrorResponse_IncludesRetryAfterForModelCooldownDefaultSetti
 func TestClaudeModelCooldownPreservesDeadlineAcrossJSONAndSSE(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cooldown := coreauth.NewModelCooldownError("claude-opus-5-5", "claude", 20*time.Second)
-	retryAt := gjson.Get(cooldown.Error(), "error.retry_at").String()
+	retryAt := ojson.Get(cooldown.Error(), "error.retry_at").String()
 	if _, errParse := time.Parse(time.RFC3339Nano, retryAt); errParse != nil {
 		t.Fatalf("invalid cooldown deadline %q: %v", retryAt, errParse)
 	}
@@ -324,16 +324,16 @@ func TestClaudeModelCooldownPreservesDeadlineAcrossJSONAndSSE(t *testing.T) {
 				_, body, _ = strings.Cut(body, "event: error\ndata: ")
 				body = strings.TrimSpace(body)
 			}
-			if got := gjson.Get(body, "error.type").String(); got != "rate_limit_error" {
+			if got := ojson.Get(body, "error.type").String(); got != "rate_limit_error" {
 				t.Fatalf("error.type = %q, want rate_limit_error", got)
 			}
-			if got := gjson.Get(body, "error.code").String(); got != "model_cooldown" {
+			if got := ojson.Get(body, "error.code").String(); got != "model_cooldown" {
 				t.Fatalf("error.code = %q, want model_cooldown", got)
 			}
-			if got := gjson.Get(body, "error.retry_at").String(); got != retryAt {
+			if got := ojson.Get(body, "error.retry_at").String(); got != retryAt {
 				t.Fatalf("retry_at = %q, want original deadline %q", got, retryAt)
 			}
-			message := gjson.Get(body, "error.message").String()
+			message := ojson.Get(body, "error.message").String()
 			if !strings.HasPrefix(message, "[CLIProxyAPI model_cooldown retry_at="+retryAt+"] ") || !strings.Contains(message, "All credentials for model claude-opus-5-5 are cooling down") {
 				t.Fatalf("SDK-compatible cooldown message = %q", message)
 			}

@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/usageupdates"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
@@ -30,7 +30,7 @@ const (
 	claudeUsageURL       = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"
 	claudeResetURLFormat = "https://api.anthropic.com/api/organizations/%s/reset_rate_limits"
 	claudeResetProgram   = "cedar_ember"
-	claudeUsageUserAgent = "claude-cli/2.1.280 (external, cli)"
+	claudeUsageUserAgent = "claude-cli/2.1.321 (external, cli)"
 	codexUsageURL        = "https://chatgpt.com/backend-api/wham/usage"
 	codexCreditsURL      = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 
@@ -541,13 +541,13 @@ func roundPercent(v float64) float64 {
 	return math.Round(v*10) / 10
 }
 
-func parseFlexibleTime(raw gjson.Result) time.Time {
+func parseFlexibleTime(raw ojson.Result) time.Time {
 	switch raw.Type {
-	case gjson.Number:
+	case ojson.Number:
 		if raw.Int() > 0 {
 			return time.Unix(raw.Int(), 0)
 		}
-	case gjson.String:
+	case ojson.String:
 		if t, errParse := time.Parse(time.RFC3339Nano, strings.TrimSpace(raw.String())); errParse == nil {
 			return t
 		}
@@ -584,7 +584,7 @@ func usageWindowsFromSignals(provider string, quota coreauth.QuotaState, now tim
 		if !ok {
 			return time.Time{}
 		}
-		return parseFlexibleTime(gjson.Parse(strconv.Quote(raw)))
+		return parseFlexibleTime(ojson.Parse(strconv.Quote(raw)))
 	}
 
 	var windows []usageWindow
@@ -763,10 +763,10 @@ func (h *Handler) probeClaudeUsage(ctx context.Context, auth *coreauth.Auth, pro
 	if resp.status < 200 || resp.status >= 300 {
 		return usageStatusError{status: resp.status, retryAfter: resp.header.Get("Retry-After")}
 	}
-	if !gjson.ValidBytes(resp.body) {
+	if !ojson.ValidBytes(resp.body) {
 		return fmt.Errorf("invalid usage response")
 	}
-	root := gjson.ParseBytes(resp.body)
+	root := ojson.ParseBytes(resp.body)
 	probe.windows = parseClaudeUsageWindows(root)
 	probe.resets = parseClaudeResetCredits(root.Get("cedar_ember"), time.Now())
 	if plan := usageMetadataString(auth, "subscription_type"); plan != "" {
@@ -775,22 +775,22 @@ func (h *Handler) probeClaudeUsage(ctx context.Context, auth *coreauth.Auth, pro
 	return nil
 }
 
-func parseClaudeUsageWindows(root gjson.Result) []usageWindow {
+func parseClaudeUsageWindows(root ojson.Result) []usageWindow {
 	windows := []usageWindow{}
 	for _, spec := range []struct {
 		key, kind string
 		minutes   int64
 	}{{"five_hour", windowFiveHour, 300}, {"seven_day", windowWeekly, 7 * 24 * 60}} {
 		window := root.Get(spec.key)
-		if !window.IsObject() || window.Get("utilization").Type != gjson.Number {
+		if !window.IsObject() || window.Get("utilization").Type != ojson.Number {
 			continue
 		}
 		windows = append(windows, newUsageWindow(spec.kind, usageWindowLabel(spec.kind, 0),
 			window.Get("utilization").Float(), parseFlexibleTime(window.Get("resets_at")), spec.minutes))
 	}
-	root.Get("limits").ForEach(func(_, limit gjson.Result) bool {
+	root.Get("limits").ForEach(func(_, limit ojson.Result) bool {
 		name := strings.TrimSpace(limit.Get("scope.model.display_name").String())
-		if limit.Get("kind").String() != "weekly_scoped" || name == "" || limit.Get("percent").Type != gjson.Number {
+		if limit.Get("kind").String() != "weekly_scoped" || name == "" || limit.Get("percent").Type != ojson.Number {
 			return true
 		}
 		windows = append(windows, newUsageWindow(windowOther, "Weekly · "+name,
@@ -802,7 +802,7 @@ func parseClaudeUsageWindows(root gjson.Result) []usageWindow {
 
 // parseClaudeResetCredits mirrors the Claude CLI: only unpaused grants usable
 // now and not yet ended count, and only when the server names a next grant.
-func parseClaudeResetCredits(block gjson.Result, now time.Time) *usageResets {
+func parseClaudeResetCredits(block ojson.Result, now time.Time) *usageResets {
 	if !block.IsObject() {
 		return nil
 	}
@@ -812,13 +812,13 @@ func parseClaudeResetCredits(block gjson.Result, now time.Time) *usageResets {
 	nextID := block.Get("next_grant_id").String()
 	resets := &usageResets{}
 	var nextFound bool
-	block.Get("grants").ForEach(func(_, grant gjson.Result) bool {
+	block.Get("grants").ForEach(func(_, grant ojson.Result) bool {
 		id := grant.Get("id").String()
 		if !claudeGrantIDPattern.MatchString(id) || grant.Get("paused").Bool() || !grant.Get("usable_now").Bool() {
 			return true
 		}
 		endsAt := parseFlexibleTime(grant.Get("ends_at"))
-		if grant.Get("ends_at").Exists() && grant.Get("ends_at").Type != gjson.Null && !endsAt.After(now) {
+		if grant.Get("ends_at").Exists() && grant.Get("ends_at").Type != ojson.Null && !endsAt.After(now) {
 			return true
 		}
 		if left := grant.Get("resets_left").Int(); left > 0 {
@@ -848,26 +848,26 @@ func (h *Handler) probeCodexUsage(ctx context.Context, auth *coreauth.Auth, prob
 	if resp.status < 200 || resp.status >= 300 {
 		return usageStatusError{status: resp.status, retryAfter: resp.header.Get("Retry-After")}
 	}
-	if !gjson.ValidBytes(resp.body) {
+	if !ojson.ValidBytes(resp.body) {
 		return fmt.Errorf("invalid usage response")
 	}
-	root := gjson.ParseBytes(resp.body)
+	root := ojson.ParseBytes(resp.body)
 	probe.plan = codexPlanLabel(root.Get("plan_type").String())
 	probe.windows = parseCodexUsageWindows(root.Get("rate_limit"))
 
 	// Reset credits are optional; a failure leaves them unknown.
 	credits, errCredits := h.usageUpstreamCall(ctx, auth, http.MethodGet, codexCreditsURL, nil)
-	if errCredits == nil && credits.status >= 200 && credits.status < 300 && gjson.ValidBytes(credits.body) {
-		probe.resets = parseCodexResetCredits(gjson.ParseBytes(credits.body), time.Now())
+	if errCredits == nil && credits.status >= 200 && credits.status < 300 && ojson.ValidBytes(credits.body) {
+		probe.resets = parseCodexResetCredits(ojson.ParseBytes(credits.body), time.Now())
 	}
 	return nil
 }
 
-func parseCodexUsageWindows(rateLimit gjson.Result) []usageWindow {
+func parseCodexUsageWindows(rateLimit ojson.Result) []usageWindow {
 	windows := []usageWindow{}
 	for _, key := range []string{"primary_window", "secondary_window"} {
 		window := rateLimit.Get(key)
-		if !window.IsObject() || window.Get("used_percent").Type != gjson.Number {
+		if !window.IsObject() || window.Get("used_percent").Type != ojson.Number {
 			continue
 		}
 		minutes := window.Get("limit_window_seconds").Int() / 60
@@ -878,13 +878,13 @@ func parseCodexUsageWindows(rateLimit gjson.Result) []usageWindow {
 	return windows
 }
 
-func parseCodexResetCredits(root gjson.Result, now time.Time) *usageResets {
+func parseCodexResetCredits(root ojson.Result, now time.Time) *usageResets {
 	type credit struct {
 		id        string
 		expiresAt time.Time
 	}
 	var available []credit
-	root.Get("credits").ForEach(func(_, item gjson.Result) bool {
+	root.Get("credits").ForEach(func(_, item ojson.Result) bool {
 		id := item.Get("id").String()
 		expiresAt := parseFlexibleTime(item.Get("expires_at"))
 		if !creditIDPattern.MatchString(id) || item.Get("status").String() != "available" ||
@@ -1007,10 +1007,10 @@ func (h *Handler) redeemCodexReset(ctx context.Context, auth *coreauth.Auth, cre
 	if failure := usageStatusFailure(resp.status); failure.code != "" {
 		return "", failure.status, failure.code, failure.message
 	}
-	if !gjson.ValidBytes(resp.body) {
+	if !ojson.ValidBytes(resp.body) {
 		return "", http.StatusBadGateway, "unconfirmed", "Codex returned an invalid reset response. Retry to check whether it landed."
 	}
-	switch code := gjson.GetBytes(resp.body, "code").String(); code {
+	switch code := ojson.GetBytes(resp.body, "code").String(); code {
 	case "reset", "nothing_to_reset", "no_credit", "already_redeemed":
 		return code, http.StatusOK, "", ""
 	}
@@ -1038,10 +1038,10 @@ func (h *Handler) redeemClaudeReset(ctx context.Context, auth *coreauth.Auth, gr
 	if failure := usageStatusFailure(resp.status); failure.code != "" {
 		return "", failure.status, failure.code, failure.message
 	}
-	if !gjson.ValidBytes(resp.body) {
+	if !ojson.ValidBytes(resp.body) {
 		return "", http.StatusBadGateway, "unconfirmed", "Claude returned an invalid reset response. Retry to check whether it landed."
 	}
-	switch result := gjson.GetBytes(resp.body, "result").String(); result {
+	switch result := ojson.GetBytes(resp.body, "result").String(); result {
 	case "reset":
 		return "reset", http.StatusOK, "", ""
 	case "not_limited":

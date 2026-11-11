@@ -89,8 +89,8 @@ func TestHistoryAggregatesMinuteRowsIntoHourBuckets(t *testing.T) {
 }
 
 func TestHistoryIncludesEmptyBuckets(t *testing.T) {
-	store := openTestStore(t)
 	base := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	store := openTestStoreWithClock(t, func() time.Time { return base })
 	store.add(base, "claude", "claude-opus-4-5", "a1", TierStandard, Counters{Requests: 1, Output: 10})
 
 	result, errHistory := store.History(context.Background(), HistoryQuery{
@@ -187,7 +187,8 @@ func TestHistoryRejectsInvalidQueries(t *testing.T) {
 }
 
 func TestPluginRecordsCanonicalBreakdown(t *testing.T) {
-	store := openTestStore(t)
+	at := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	store := openTestStoreWithClock(t, func() time.Time { return at })
 	currentMu.Lock()
 	current = store
 	currentMu.Unlock()
@@ -197,7 +198,6 @@ func TestPluginRecordsCanonicalBreakdown(t *testing.T) {
 		currentMu.Unlock()
 	})
 
-	at := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	updates, unsubscribe := usageupdates.Subscribe()
 	defer unsubscribe()
 	plugin{}.HandleUsage(context.Background(), coreusage.Record{

@@ -20,7 +20,10 @@ func TestQuotaHeadersAreObservedBeforeExecutionFinishes(t *testing.T) {
 	if errRegister != nil {
 		t.Fatal(errRegister)
 	}
-	ctx := manager.newUpstreamAttemptContext(context.Background(), auth)
+	ctx := manager.newQuotaObservedAttemptContext(context.Background(), auth)
+	if RequestScopedErrorConfigFromContext(ctx) == nil {
+		t.Fatal("quota observation dropped the request-scoped error configuration")
+	}
 	internallogging.SetResponseHeaders(ctx, http.Header{"X-Codex-Plan-Type": {"pro"}})
 	internallogging.MergeResponseHeaders(ctx, http.Header{
 		"X-Codex-Primary-Used-Percent": {"42"}, "X-Codex-Primary-Window-Minutes": {"300"},
@@ -34,7 +37,7 @@ func TestQuotaHeadersAreObservedBeforeExecutionFinishes(t *testing.T) {
 	}
 	// An attempt inherited from a different provider must not retain this
 	// credential's observer, even when contexts are nested during failover.
-	other := manager.newUpstreamAttemptContext(ctx, &Auth{ID: "other", Provider: "openai"})
+	other := manager.newQuotaObservedAttemptContext(ctx, &Auth{ID: "other", Provider: "openai"})
 	internallogging.SetResponseHeaders(other, http.Header{"X-Codex-Primary-Used-Percent": {"99"}})
 	current, _ = manager.GetByID(auth.ID)
 	if current.Quota.Signals["X-Codex-Primary-Used-Percent"] != "42" {
@@ -59,8 +62,8 @@ func TestQuotaObserverIgnoresCountTokensAndRetiredCredentials(t *testing.T) {
 	if errRegister != nil {
 		t.Fatal(errRegister)
 	}
-	ctx := manager.newUpstreamAttemptContext(context.Background(), auth)
-	countCtx := newUpstreamAttemptContext(ctx)
+	ctx := manager.newQuotaObservedAttemptContext(context.Background(), auth)
+	countCtx := manager.newUpstreamAttemptContext(ctx)
 	internallogging.SetResponseHeaders(countCtx, http.Header{"X-Codex-Primary-Used-Percent": {"99"}})
 	current, _ := manager.GetByID(auth.ID)
 	if len(current.Quota.Signals) != 0 {
