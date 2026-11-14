@@ -65,9 +65,19 @@ type usageWindow struct {
 }
 
 type usageResets struct {
-	Available     int64      `json:"available"`
-	NextCreditID  string     `json:"next_credit_id,omitempty"`
-	NextExpiresAt *time.Time `json:"next_expires_at,omitempty"`
+	Available     int64              `json:"available"`
+	NextCreditID  string             `json:"next_credit_id,omitempty"`
+	NextExpiresAt *time.Time         `json:"next_expires_at,omitempty"`
+	Options       []usageResetOption `json:"options"`
+}
+
+type usageResetOption struct {
+	CreditID  string     `json:"credit_id"`
+	Label     string     `json:"label"`
+	ResetType string     `json:"reset_type,omitempty"`
+	Clears    []string   `json:"clears,omitempty"`
+	Available int64      `json:"available"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 type usageAccount struct {
@@ -800,43 +810,52 @@ func parseClaudeUsageWindows(root ojson.Result) []usageWindow {
 	return windows
 }
 
-// parseClaudeResetCredits mirrors the Claude CLI: only unpaused grants usable
-// now and not yet ended count, and only when the server names a next grant.
+// parseClaudeResetCredits keeps each usable grant so callers can choose its
+// reset type instead of always spending the provider's suggested next grant.
 func parseClaudeResetCredits(block ojson.Result, now time.Time) *usageResets {
 	if !block.IsObject() {
 		return nil
 	}
-	if !block.Get("eligible").Bool() {
-		return &usageResets{}
+	resets := &usageResets{Options: []usageResetOption{}}
+	if !block.Get("eligible").Bool() || parseFlexibleTime(block.Get("cooldown_until")).After(now) {
+		return resets
 	}
 	nextID := block.Get("next_grant_id").String()
-	resets := &usageResets{}
-	var nextFound bool
 	block.Get("grants").ForEach(func(_, grant ojson.Result) bool {
 		id := grant.Get("id").String()
-		if !claudeGrantIDPattern.MatchString(id) || grant.Get("paused").Bool() || !grant.Get("usable_now").Bool() {
+		left := grant.Get("resets_left").Int()
+		if !claudeGrantIDPattern.MatchString(id) || left <= 0 || grant.Get("paused").Bool() || !grant.Get("usable_now").Bool() {
+			return true
+		}
+		if parseFlexibleTime(grant.Get("starts_at")).After(now) {
 			return true
 		}
 		endsAt := parseFlexibleTime(grant.Get("ends_at"))
 		if grant.Get("ends_at").Exists() && grant.Get("ends_at").Type != ojson.Null && !endsAt.After(now) {
 			return true
 		}
-		if left := grant.Get("resets_left").Int(); left > 0 {
-			resets.Available += left
+		option := usageResetOption{
+			CreditID: id, Label: strings.TrimSpace(grant.Get("label").String()),
+			ResetType: grant.Get("type").String(), Available: left,
 		}
-		if id == nextID {
-			nextFound = true
-			resets.NextCreditID = id
-			if !endsAt.IsZero() {
-				e := endsAt.UTC()
-				resets.NextExpiresAt = &e
+		grant.Get("clears").ForEach(func(_, window ojson.Result) bool {
+			if window.Type == ojson.String && strings.TrimSpace(window.String()) != "" {
+				option.Clears = append(option.Clears, window.String())
 			}
+			return true
+		})
+		if !endsAt.IsZero() {
+			e := endsAt.UTC()
+			option.ExpiresAt = &e
+		}
+		resets.Options = append(resets.Options, option)
+		resets.Available += left
+		if id == nextID {
+			resets.NextCreditID = id
+			resets.NextExpiresAt = option.ExpiresAt
 		}
 		return true
 	})
-	if !nextFound {
-		return &usageResets{}
-	}
 	return resets
 }
 
@@ -895,7 +914,14 @@ func parseCodexResetCredits(root ojson.Result, now time.Time) *usageResets {
 		return true
 	})
 	sort.Slice(available, func(i, j int) bool { return available[i].expiresAt.Before(available[j].expiresAt) })
-	resets := &usageResets{Available: int64(len(available))}
+	resets := &usageResets{Available: int64(len(available)), Options: []usageResetOption{}}
+	for _, credit := range available {
+		e := credit.expiresAt.UTC()
+		resets.Options = append(resets.Options, usageResetOption{
+			CreditID: credit.id, Label: "Codex rate-limit reset", ResetType: "codex_rate_limits",
+			Available: 1, ExpiresAt: &e,
+		})
+	}
 	if len(available) > 0 {
 		resets.NextCreditID = available[0].id
 		e := available[0].expiresAt.UTC()

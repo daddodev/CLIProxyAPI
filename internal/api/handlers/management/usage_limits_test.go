@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -225,6 +226,102 @@ func TestGetUsageLimitsFallsBackToHeaderSignals(t *testing.T) {
 	}
 	if account.Windows[1].UsedPercent != 0 || account.Windows[1].ResetsAt != nil {
 		t.Fatalf("an elapsed window should read as reset: %+v", account.Windows[1])
+	}
+}
+
+func TestUsageLimitsSelectsClaudeResetGrant(t *testing.T) {
+	expiresAt := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	h, recorded := newUsageTestHandler(t, []*coreauth.Auth{claudeTestAuth("claude-a", "a@example.com")},
+		func(req *http.Request, _ []byte) *http.Response {
+			if req.Method == http.MethodPost {
+				return usageJSONResponse(http.StatusOK, `{"result":"reset"}`)
+			}
+			return usageJSONResponse(http.StatusOK, fmt.Sprintf(`{"cedar_ember":{
+				"eligible":true,"next_grant_id":"session-grant","grants":[
+					{"id":"session-grant","type":"session","label":"Session credit","clears":["five_hour"],"resets_left":2,"usable_now":true,"ends_at":%q},
+					{"id":"weekly-grant","type":"weekly","label":"Weekly credit","clears":["seven_day"],"resets_left":1,"usable_now":true,"ends_at":%q}
+				]}}`, expiresAt.Format(time.RFC3339), expiresAt.Format(time.RFC3339)))
+		})
+
+	payload := getUsageLimits(t, h)
+	provider := payload.Providers[0]
+	resets := provider.Accounts[0].Resets
+	if provider.ResetsAvailable != 3 || resets.Available != 3 || resets.NextCreditID != "session-grant" || len(resets.Options) != 2 {
+		t.Fatalf("unexpected reset inventory: %+v", resets)
+	}
+	for i, wantType := range []string{"session", "weekly"} {
+		option := resets.Options[i]
+		wantWindow := "five_hour"
+		wantLabel := "Session credit"
+		if i == 1 {
+			wantWindow = "seven_day"
+			wantLabel = "Weekly credit"
+		}
+		if option.ResetType != wantType || option.Label != wantLabel || len(option.Clears) != 1 || option.Clears[0] != wantWindow || option.ExpiresAt == nil || !option.ExpiresAt.Equal(expiresAt) {
+			t.Fatalf("option %d lost grant details: %+v", i, option)
+		}
+	}
+
+	// Choosing the weekly grant must not silently spend the suggested session grant.
+	index := authIndexFor(t, h, "claude-a")
+	rec := postUsageReset(t, h, fmt.Sprintf(`{"auth_index":%q,"credit_id":"weekly-grant","request_id":"selected-weekly"}`, index))
+	if rec.Code != http.StatusOK || len(*recorded) != 2 {
+		t.Fatalf("reset status=%d calls=%d body=%s", rec.Code, len(*recorded), rec.Body.String())
+	}
+	sent := ojson.ParseBytes((*recorded)[1].body)
+	if sent.Get("grant_id").String() != "weekly-grant" || sent.Get("request_id").String() != "selected-weekly" || sent.Get("program").String() != claudeResetProgram {
+		t.Fatalf("wrong grant redeemed: %s", (*recorded)[1].body)
+	}
+}
+
+func TestParseClaudeResetCreditsFiltersUnavailableGrants(t *testing.T) {
+	now := time.Date(2026, time.November, 14, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, fields string
+	}{
+		{"paused", `"paused":true,"usable_now":true,"resets_left":2`},
+		{"not usable", `"usable_now":false,"resets_left":2`},
+		{"exhausted", `"usable_now":true,"resets_left":0`},
+		{"expired", `"usable_now":true,"resets_left":2,"ends_at":"2026-11-14T12:00:00Z"`},
+		{"malformed expiry", `"usable_now":true,"resets_left":2,"ends_at":"invalid"`},
+		{"not started", `"usable_now":true,"resets_left":2,"starts_at":"2026-11-15T00:00:00Z"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			block := ojson.Parse(fmt.Sprintf(`{"eligible":true,"next_grant_id":"blocked","grants":[
+				{"id":"blocked",%s},
+				{"id":"usable","usable_now":true,"resets_left":1,"type":"full","clears":["five_hour","seven_day"]}
+			]}`, tc.fields))
+			resets := parseClaudeResetCredits(block, now)
+			if resets.Available != 1 || resets.NextCreditID != "" || len(resets.Options) != 1 || resets.Options[0].CreditID != "usable" || len(resets.Options[0].Clears) != 2 {
+				t.Fatalf("unavailable grant offered or usable grant hidden: %+v", resets)
+			}
+		})
+	}
+	for _, fields := range []string{`"eligible":false`, `"eligible":true,"cooldown_until":"2026-11-15T00:00:00Z"`} {
+		block := ojson.Parse(fmt.Sprintf(`{%s,"grants":[{"id":"usable","usable_now":true,"resets_left":1}]}`, fields))
+		if resets := parseClaudeResetCredits(block, now); resets.Available != 0 || len(resets.Options) != 0 {
+			t.Fatalf("ineligible or cooling-down account offered resets: %+v", resets)
+		}
+	}
+}
+
+func TestParseCodexResetCreditsExposesSortedOptions(t *testing.T) {
+	now := time.Date(2026, time.November, 14, 12, 0, 0, 0, time.UTC)
+	root := ojson.Parse(`{"credits":[
+		{"id":"late","status":"available","reset_type":"codex_rate_limits","expires_at":"2026-11-16T00:00:00Z"},
+		{"id":"soon","status":"available","reset_type":"codex_rate_limits","expires_at":"2026-11-15T00:00:00Z"},
+		{"id":"used","status":"redeemed","reset_type":"codex_rate_limits","expires_at":"2026-11-15T00:00:00Z"},
+		{"id":"expired","status":"available","reset_type":"codex_rate_limits","expires_at":"2026-11-14T12:00:00Z"}
+	]}`)
+	resets := parseCodexResetCredits(root, now)
+	if resets.Available != 2 || resets.NextCreditID != "soon" || len(resets.Options) != 2 {
+		t.Fatalf("unexpected Codex reset inventory: %+v", resets)
+	}
+	for i, id := range []string{"soon", "late"} {
+		option := resets.Options[i]
+		if option.CreditID != id || option.Available != 1 || option.ResetType != "codex_rate_limits" || option.Label == "" || option.ExpiresAt == nil {
+			t.Fatalf("unexpected Codex option: %+v", option)
+		}
 	}
 }
 

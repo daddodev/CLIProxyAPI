@@ -284,6 +284,14 @@ fieldset.seg-ctl { margin: 0; min-width: 0 }
 .pop-sub { font: 11.5px var(--mono); color: var(--muted) }
 .pop-item .btn { height: 30px; font-size: 12.5px }
 .pop-item .confirm, .pop-item .outcome { margin-top: 10px }
+.reset-options { list-style: none; display: grid; gap: 8px; margin: 10px 0 0; padding: 0 }
+.reset-option { padding: 10px; border: 1px solid var(--line); border-radius: 9px }
+.reset-option.is-selected { border-color: var(--pc); background: var(--pc-soft) }
+.reset-option-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px }
+.reset-option-title { font-size: 12.5px; font-weight: 650 }
+.reset-option-label, .reset-option-detail { margin: 4px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere }
+.reset-option .pop-sub { margin-top: 6px }
+.reset-claim { margin-top: 8px; font-size: 12px; font-weight: 600 }
 .confirm {
     padding: 11px 12px;
     border-radius: 10px;
@@ -793,41 +801,44 @@ function savePrefs() {
 // reused for any later attempt on the same credit, even after a reload, so an
 // unanswered claim can never turn into a second redemption.
 const PENDING_STORAGE = "cpa-usage-pending-claims"
-const PENDING_TTL_MS = 24 * 3600 * 1000
 function loadPending() {
     let raw
     try { raw = JSON.parse(localStorage.getItem(PENDING_STORAGE) || "{}") || {} } catch { raw = {} }
-    const now = Date.now()
-    return new Map(Object.entries(raw).filter(([, c]) => c && c.creditId && c.requestId && now - (c.at || 0) < PENDING_TTL_MS))
+    // Time alone cannot prove a redemption failed. Keep its key until settled.
+    return new Map(Object.entries(raw).filter(([, c]) => c && c.creditId && c.requestId))
 }
-// Pending claims are shared by every open tab, so each change re-reads storage
-// before writing instead of overwriting it with this tab's copy.
-function updatePending(id, claim) {
-    const fresh = loadPending()
-    if (claim) fresh.set(id, claim)
-    else fresh.delete(id)
-    localStorage.setItem(PENDING_STORAGE, JSON.stringify(Object.fromEntries(fresh)))
-    state.pending = fresh
+const sameClaim = (a, b) => !!a && !!b && a.creditId === b.creditId && a.requestId === b.requestId
+const resetCoordinationAvailable = () => typeof navigator.locks?.request === "function"
+const RESET_COORDINATION_MESSAGE = "To redeem resets safely across tabs, use HTTPS or localhost in a browser with Web Locks support."
+
+// Creation, retries, dismissal and completion share one lock. A delayed tab
+// must never overwrite or delete a newer claim for the same account.
+async function updatePending(change) {
+    const update = () => {
+        const fresh = loadPending()
+        const result = change(fresh)
+        localStorage.setItem(PENDING_STORAGE, JSON.stringify(Object.fromEntries(fresh)))
+        state.pending = fresh
+        return result
+    }
+    if (!resetCoordinationAvailable()) throw new Error(RESET_COORDINATION_MESSAGE)
+    return navigator.locks.request("cpa-usage-claims", update)
 }
 
 function pendingUi(c) {
-    return { phase: "done", code: "unconfirmed", message: "A previous reset attempt was not confirmed.", creditId: c.creditId, requestId: c.requestId }
+    return { phase: "done", code: "unconfirmed", message: "A previous reset attempt was not confirmed.", creditId: c.creditId, requestId: c.requestId, choice: c.choice }
 }
 
 // claimFor returns the claim to send for an account: an unresolved claim is
 // always retried with its own credit and ID before any new claim is created.
-// Web Locks (secure contexts only) serialize tabs; elsewhere the fresh
-// storage read narrows the race to near-simultaneous clicks.
-async function claimFor(id, credit) {
-    const pick = () => {
-        const existing = loadPending().get(id)
+async function claimFor(id, credit, choice) {
+    return updatePending((pending) => {
+        const existing = pending.get(id)
         if (existing) return existing
-        const claim = { creditId: credit, requestId: newRequestId(), at: Date.now() }
-        updatePending(id, claim)
+        const claim = { creditId: credit, requestId: newRequestId(), choice, at: Date.now() }
+        pending.set(id, claim)
         return claim
-    }
-    if (navigator.locks?.request) return navigator.locks.request("cpa-usage-claims", pick)
-    return pick()
+    })
 }
 
 const state = {
@@ -1278,9 +1289,8 @@ const OUTCOMES = {
     already_redeemed: { tone: "warn", text: "This credit was already redeemed." },
     no_credit: { tone: "warn", text: "No reset credit is available for this account." },
 }
-// Errors that prove the claim was not applied. Anything else, including
-// network failures and unknown codes, may have landed and keeps its request ID.
-const DEFINITIVE_ERRORS = new Set(["rate_limited", "cooling_down", "signed_out", "not_found", "invalid_request", "upstream_failed"])
+// Only a provider reset outcome settles a claim. An error on a later retry
+// cannot prove that an earlier attempt did not spend the credit.
 const ERRORS = {
     rate_limited: "Rate limited by upstream. Try again shortly.",
     cooling_down: "The account is cooling down. Try again later.",
@@ -1298,10 +1308,23 @@ function describeOutcome(ui) {
     }
     const text = ERRORS[ui.code] || "The reset failed."
     const detail = ui.message && ui.message !== text ? ui.message : ""
-    return { tone: "bad", text, detail, retry: !DEFINITIVE_ERRORS.has(ui.code) }
+    return { tone: "bad", text, detail, retry: !!ui.creditId && !!ui.requestId }
 }
 
 const providerKind = (p) => (p.provider === "claude" || p.provider === "codex" ? p.provider : "other")
+
+const RESET_WINDOWS = { five_hour: "5-hour", seven_day: "weekly", seven_day_overage_included: "weekly included overage" }
+function resetChoice(option) {
+    const windows = (option.clears || []).map((w) => RESET_WINDOWS[w] || w.replaceAll("_", " "))
+    const label = { session: "5-hour reset", weekly: "Weekly reset", full: "Full reset", codex_rate_limits: "Codex rate-limit reset" }[option.reset_type]
+        || (windows.length ? `${windows.join(" + ")} reset` : "Usage reset")
+    const detail = windows.length ? `Resets: ${windows.join(", ")}.` : option.reset_type === "codex_rate_limits" ? "Resets Codex rate limits." : "Affected limits not reported."
+    return { label, detail }
+}
+
+function resetOptions(a) {
+    return (a?.resets?.options || []).filter((o) => o.credit_id && o.available > 0 && (!o.expires_at || new Date(o.expires_at).getTime() > Date.now()))
+}
 
 function resetButtonHtml(p, rows) {
     const resets = Number(p.resets_available) || 0
@@ -1317,34 +1340,47 @@ function resetPopHtml(p, rows) {
         const r = a.resets
         const ui = state.resetUi.get(a.auth_index)
         const id = esc(a.auth_index)
-        const sub = !r ? "Credits not reported" : !r.available ? "No credits" : `${nf.format(r.available)} credit${r.available > 1 ? "s" : ""}${r.next_expires_at ? ` · expires ${absShort(r.next_expires_at)}` : ""}`
-        let act = ""
-        if (ui?.phase === "busy") act = `<button class="btn btn-accent" type="button" disabled><span class="spin" aria-hidden="true"></span>Redeeming…</button>`
-        else if (r?.available && r.next_credit_id && !a.disabled && ui?.phase !== "confirm") act = `<button class="btn btn-accent" type="button" data-action="reset-open" data-id="${id}" data-focus="open-${id}">Use reset</button>`
+        const sub = !r ? "Credits not reported" : !r.available ? "No credits" : `${nf.format(r.available)} credit${r.available > 1 ? "s" : ""}`
+        const unresolved = ui?.phase === "done" && describeOutcome(ui).retry
+        const options = resetOptions(a).map((option) => {
+            const choice = resetChoice(option)
+            const credit = esc(option.credit_id)
+            const selected = ui?.creditId === option.credit_id && (ui.phase === "confirm" || ui.phase === "busy")
+            const disabled = !resetCoordinationAvailable() || a.disabled || ui?.phase === "busy" || ui?.phase === "confirm" || unresolved
+            return `<li class="reset-option${selected ? " is-selected" : ""}" data-key="credit-${credit}">
+                <div class="reset-option-head"><div class="reset-option-title">${esc(choice.label)}</div><button class="btn btn-accent" type="button" data-action="reset-open" data-id="${id}" data-credit="${credit}" data-focus="open-${id}-${credit}" aria-label="${esc(`Use ${choice.label} on ${a.label}${option.label ? `: ${option.label}` : ""}`)}"${disabled ? " disabled" : ""}>${selected && ui.phase === "busy" ? `<span class="spin" aria-hidden="true"></span>Redeeming…` : "Use reset"}</button></div>
+                ${option.label && option.label !== choice.label ? `<p class="reset-option-label">${esc(option.label)}</p>` : ""}
+                <p class="reset-option-detail">${esc(choice.detail)}</p>
+                <div class="pop-sub">${nf.format(option.available)} left${option.expires_at ? ` · expires ${esc(absShort(option.expires_at))}` : " · no expiry reported"}</div>
+            </li>`
+        }).join("")
         let msg = ""
         if (ui?.phase === "confirm") {
             msg = `<div class="confirm" role="group" aria-label="Confirm reset">
-                <p>Use a reset credit on <b>${esc(a.label)}</b>? This can't be undone.</p>
+                <p>Use <b>${esc(ui.choice.label)}</b> on <b>${esc(a.label)}</b>? ${esc(ui.choice.detail)} This spends one credit and can't be undone.</p>
                 <div class="confirm-actions">
-                    <button class="btn btn-ghost" type="button" data-action="reset-cancel" data-id="${id}" data-focus="cancel-${id}">Cancel</button>
-                    <button class="btn btn-commit" type="button" data-action="reset-confirm" data-id="${id}">Redeem</button>
+                    <button class="btn btn-ghost" type="button" data-action="reset-cancel" data-id="${id}" data-credit="${esc(ui.creditId)}" data-focus="cancel-${id}">Cancel</button>
+                    <button class="btn btn-commit" type="button" data-action="reset-confirm" data-id="${id}"${resetCoordinationAvailable() ? "" : " disabled"}>Redeem</button>
                 </div>
             </div>`
         } else if (ui?.phase === "done") {
             const o = describeOutcome(ui)
             msg = `<div class="outcome ${o.tone}" role="status">
-                <div class="outcome-body">${esc(o.text)}${o.detail ? `<small>${esc(o.detail)}</small>` : ""}</div>
-                <div class="outcome-acts">${o.retry ? `<button class="btn btn-accent" type="button" data-action="reset-retry" data-id="${id}" data-focus="retry-${id}">Retry same credit</button>` : ""}<button class="btn btn-ghost" type="button" data-action="reset-dismiss" data-id="${id}" data-focus="dismiss-${id}">Dismiss</button></div>
+                <div class="outcome-body">${ui.choice ? `<div class="reset-option-title">${esc(ui.choice.label)}</div>` : ""}${esc(o.text)}${o.detail ? `<small>${esc(o.detail)}</small>` : ""}</div>
+                <div class="outcome-acts">${o.retry ? `<button class="btn btn-accent" type="button" data-action="reset-retry" data-id="${id}" data-focus="retry-${id}"${resetCoordinationAvailable() ? "" : " disabled"}>Retry same credit</button>` : ""}<button class="btn btn-ghost" type="button" data-action="reset-dismiss" data-id="${id}" data-focus="dismiss-${id}">Dismiss</button></div>
             </div>`
         }
         return `<li class="pop-item" data-key="pr-${id}" style="--c:${color}">
-            <div class="pop-row"><span class="sw" aria-hidden="true"></span><div class="pop-txt"><div class="pop-label" title="${esc(a.label)}">${esc(a.label)}</div><div class="pop-sub">${esc(sub)}</div></div>${act}</div>
+            <div class="pop-row"><span class="sw" aria-hidden="true"></span><div class="pop-txt"><div class="pop-label" title="${esc(a.label)}">${esc(a.label)}</div><div class="pop-sub">${esc(sub)}</div></div></div>
+            ${options ? `<ul class="reset-options" aria-label="Reset options for ${esc(a.label)}">${options}</ul>` : ""}
+            ${ui?.phase === "busy" && ui.choice ? `<div class="reset-claim" role="status">Redeeming ${esc(ui.choice.label)}…</div>` : ""}
             ${msg}
         </li>`
     })
     return `<div class="pop-in pop-${providerKind(p)}" data-key="pop-${esc(p.provider)}">
         <div class="pop-head"><h3 id="reset-pop-title">${esc(p.label || p.provider)} resets</h3><button class="btn btn-icon btn-ghost" type="button" data-action="resets-close" aria-label="Close"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
-        <p class="pop-desc">A credit resets one account's usage windows right away.</p>
+        <p class="pop-desc">Choose a reset for an account. Each option lists the limits it affects.</p>
+        ${resetCoordinationAvailable() ? "" : `<p class="pop-desc" role="status">${esc(RESET_COORDINATION_MESSAGE)}</p>`}
         <ul class="pop-list">${items.join("")}</ul>
     </div>`
 }
@@ -1431,7 +1467,7 @@ function openResetPop(id) {
     if (!state.resetPop) return
     if (!resetPopOpen()) resetPop.showPopover()
     placeResetPop()
-    ;(resetPop.querySelector('[data-action="reset-retry"]') || resetPop.querySelector('[data-action="reset-open"]') || resetPop.querySelector("button"))?.focus()
+    ;(resetPop.querySelector('[data-action="reset-retry"]:not(:disabled)') || resetPop.querySelector('[data-action="reset-open"]:not(:disabled)') || resetPop.querySelector("button"))?.focus()
 }
 
 function closeResetPop(focus) {
@@ -1474,33 +1510,48 @@ function newRequestId() {
 }
 
 // requestId is the claim's idempotency key: a retry of the same claim reuses it.
-async function redeem(id, creditId, requestId) {
-    setResetUi(id, { phase: "busy", creditId, requestId })
-    updatePending(id, { creditId, requestId, at: Date.now() })
+async function redeem(id, creditId, requestId, choice) {
+    if (!resetCoordinationAvailable()) return
+    setResetUi(id, { phase: "busy", creditId, requestId, choice })
+    const claim = { creditId, requestId, choice, at: Date.now() }
+    const reserved = await updatePending((pending) => {
+        const current = pending.get(id)
+        if (current && !sameClaim(current, claim)) return current
+        pending.set(id, claim)
+        return claim
+    })
+    if (!sameClaim(reserved, claim)) {
+        setResetUi(id, pendingUi(reserved), `retry-${id}`)
+        return
+    }
     let ui
     try {
         const res = await api(`${API}/limits/reset`, { method: "POST", body: JSON.stringify({ auth_index: id, credit_id: creditId, request_id: requestId }) })
         ui = Object.hasOwn(OUTCOMES, res?.outcome)
-            ? { phase: "done", outcome: res.outcome, warning: res.warning || "", creditId, requestId }
-            : { phase: "done", code: "unconfirmed", message: "The proxy returned an unrecognized reset result.", creditId, requestId }
+            ? { phase: "done", outcome: res.outcome, warning: res.warning || "", creditId, requestId, choice }
+            : { phase: "done", code: "unconfirmed", message: "The proxy returned an unrecognized reset result.", creditId, requestId, choice }
     } catch (err) {
         if (err.status === 401) {
-            state.resetUi.set(id, { phase: "done", code: "unconfirmed", message: "Sign in again, then retry the same credit.", creditId, requestId })
+            state.resetUi.set(id, { phase: "done", code: "unconfirmed", message: "Sign in again, then retry the same credit.", creditId, requestId, choice })
             return
         }
-        ui = { phase: "done", code: err.code || "unconfirmed", message: err.message, creditId, requestId }
+        ui = { phase: "done", code: err.code || "unconfirmed", message: err.message, creditId, requestId, choice }
     }
-    if (ui.outcome || DEFINITIVE_ERRORS.has(ui.code)) updatePending(id, null)
-    state.resetUi.set(id, ui)
+    const current = await updatePending((pending) => {
+        if (ui.outcome && sameClaim(pending.get(id), claim)) pending.delete(id)
+        return pending.get(id)
+    })
+    state.resetUi.set(id, current && !sameClaim(current, claim) ? pendingUi(current) : ui)
     await loadLimits()
     const next = document.querySelector(`[data-focus="retry-${CSS.escape(id)}"]`) || document.querySelector(`[data-focus="dismiss-${CSS.escape(id)}"]`)
     next?.focus()
 }
 
-function onLimitsClick(e) {
+async function onLimitsClick(e) {
     const btn = e.target.closest("[data-action]")
     if (!btn) return
     const id = btn.dataset.id
+    if (["reset-open", "reset-confirm", "reset-retry"].includes(btn.dataset.action) && !resetCoordinationAvailable()) return
     switch (btn.dataset.action) {
         case "unlock": openAuth(); break
         case "edit-start": startEdit(); break
@@ -1519,32 +1570,60 @@ function onLimitsClick(e) {
         }
         case "resets-close": closeResetPop(true); break
         case "reset-open": {
+            const pending = loadPending().get(id)
+            if (pending) {
+                setResetUi(id, pendingUi(pending), `retry-${id}`)
+                break
+            }
+            const a = findAccount(id)
+            const option = !a?.disabled && resetOptions(a).find((o) => o.credit_id === btn.dataset.credit)
+            if (!option) break
             // One confirmation at a time, so Escape always backs out of the visible one.
             for (const [k, ui] of state.resetUi) if (ui.phase === "confirm") state.resetUi.delete(k)
-            setResetUi(id, { phase: "confirm" }, `cancel-${id}`)
+            setResetUi(id, { phase: "confirm", creditId: option.credit_id, choice: resetChoice(option) }, `cancel-${id}`)
             break
         }
-        case "reset-cancel": setResetUi(id, null, `open-${id}`); break
+        case "reset-cancel": setResetUi(id, null, `open-${id}-${btn.dataset.credit}`); break
         case "reset-dismiss": {
             // Keep an unresolved claim's request ID for reuse; just stop showing it.
-            const pending = loadPending().get(id)
-            if (pending) updatePending(id, { ...pending, dismissed: true })
-            setResetUi(id, null, `open-${id}`)
+            const ui = state.resetUi.get(id)
+            if (!resetCoordinationAvailable()) {
+                setResetUi(id, null)
+                break
+            }
+            const current = await updatePending((pending) => {
+                const claim = pending.get(id)
+                if (sameClaim(claim, ui)) pending.set(id, { ...claim, dismissed: true })
+                return pending.get(id)
+            })
+            if (current && !sameClaim(current, ui)) setResetUi(id, pendingUi(current), `retry-${id}`)
+            else setResetUi(id, null, `open-${id}-${ui?.creditId}`)
             break
         }
         case "reset-confirm": {
-            const credit = findAccount(id)?.resets?.next_credit_id
+            const ui = state.resetUi.get(id)
+            if (ui?.phase !== "confirm") break
             const pending = loadPending().get(id)
-            if (!credit && !pending) {
-                setResetUi(id, { phase: "done", code: "not_found", message: "No credit id is known for this account." })
+            if (pending) {
+                setResetUi(id, pendingUi(pending), `retry-${id}`)
                 break
             }
-            claimFor(id, credit).then((claim) => redeem(id, claim.creditId, claim.requestId))
+            const a = findAccount(id)
+            if (a?.disabled || !resetOptions(a).some((o) => o.credit_id === ui.creditId)) {
+                setResetUi(id, { phase: "done", code: "not_found", message: "The selected reset is no longer available. Choose another reset." })
+                break
+            }
+            // Disable confirmation before awaiting the cross-tab lock.
+            setResetUi(id, { ...ui, phase: "busy" })
+            claimFor(id, ui.creditId, ui.choice).then((claim) => {
+                if (claim.creditId !== ui.creditId) setResetUi(id, pendingUi(claim), `retry-${id}`)
+                else redeem(id, claim.creditId, claim.requestId, claim.choice)
+            })
             break
         }
         case "reset-retry": {
             const ui = state.resetUi.get(id)
-            if (ui?.creditId) redeem(id, ui.creditId, ui.requestId || newRequestId())
+            if (ui?.creditId) redeem(id, ui.creditId, ui.requestId || newRequestId(), ui.choice)
             break
         }
     }
@@ -2439,7 +2518,7 @@ document.addEventListener("keydown", (e) => {
     if (!state.resetPop) return
     // Escape backs out of a pending confirmation before closing the popover.
     const confirming = (resetPopProvider()?.accounts || []).find((a) => state.resetUi.get(a.auth_index)?.phase === "confirm")
-    if (confirming) setResetUi(confirming.auth_index, null, `open-${confirming.auth_index}`)
+    if (confirming) setResetUi(confirming.auth_index, null, `open-${confirming.auth_index}-${state.resetUi.get(confirming.auth_index).creditId}`)
     else closeResetPop(true)
 })
 
@@ -2629,7 +2708,7 @@ function demoInit() {
         observed: t0 - obsAgo,
         cooldownUntil: cooldown ? t0 + cooldown : null,
         wins: wins.map(([kind, wl, used, resetIn, minutes]) => ({ kind, label: wl, used, resetsAt: t0 + resetIn, minutes })),
-        resets: resets && { available: resets[0], id: resets[1], expires: t0 + resets[2] },
+        resets: resets && resets.map(([available, id, expires, reset_type, clears, label = ""]) => ({ available, id, expires: t0 + expires, reset_type, clears, label })),
         attempts: 0,
     })
     demo = {
@@ -2637,12 +2716,12 @@ function demoInit() {
         routing: "fill-first",
         providers: [
             { provider: "claude", label: "Claude", accounts: [
-                acct("cl-7f3a", "personal@example.com", "Max 20x", "ok", "probe", 8000, "", [["five_hour", "5h", 82, 2 * HOUR + 34 * MIN, 300], ["weekly", "Weekly", 58, 4 * DAY + 7 * HOUR, 10080], ["other", "Weekly · Opus", 71, 4 * DAY + 7 * HOUR, 10080]], [1, "cr-a1", 6 * DAY + 3 * HOUR], 0, { priority: 1, r5: 20, rw: 20 }),
-                acct("cl-91c0", "work@example.it", "Max 5x", "cooldown", "headers", 3 * MIN, "", [["five_hour", "5h", 100, 41 * MIN, 300], ["weekly", "Weekly", 72, 2 * DAY + 3 * HOUR, 10080]], [2, "cr-a2", 2 * DAY + 5 * HOUR], 41 * MIN, { priority: 2 }),
+                acct("cl-7f3a", "personal@example.com", "Max 20x", "ok", "probe", 8000, "", [["five_hour", "5h", 82, 2 * HOUR + 34 * MIN, 300], ["weekly", "Weekly", 58, 4 * DAY + 7 * HOUR, 10080], ["other", "Weekly · Opus", 71, 4 * DAY + 7 * HOUR, 10080]], [[1, "cr-a1-session", 6 * DAY + 3 * HOUR, "session", ["five_hour"], "Session reset credit"], [1, "cr-a1-weekly", 2 * DAY, "weekly", ["seven_day"], "Weekly reset credit"]], 0, { priority: 1, r5: 20, rw: 20 }),
+                acct("cl-91c0", "work@example.it", "Max 5x", "cooldown", "headers", 3 * MIN, "", [["five_hour", "5h", 100, 41 * MIN, 300], ["weekly", "Weekly", 72, 2 * DAY + 3 * HOUR, 10080]], [[2, "cr-a2", 2 * DAY + 5 * HOUR, "full", ["five_hour", "seven_day"]]], 41 * MIN, { priority: 2 }),
                 acct("cl-e4a9", "old@example.org", "", "error", "headers", 3 * HOUR + 12 * MIN, "The provider rejected the account token; sign in again.", [["five_hour", "5h", 100, 3 * HOUR + 20 * MIN, 300], ["weekly", "Weekly", 93, DAY + 4 * HOUR, 10080]], null),
             ] },
             { provider: "codex", label: "Codex", accounts: [
-                acct("cx-02be", "dev@example.com", "Pro", "ok", "probe", 12000, "", [["five_hour", "5h", 93, HOUR + 12 * MIN, 300], ["weekly", "Weekly", 63, 5 * DAY + 2 * HOUR, 10080]], [1, "cr-c1", 12 * DAY], 0, { r5: 10, rw: 15 }),
+                acct("cx-02be", "dev@example.com", "Pro", "ok", "probe", 12000, "", [["five_hour", "5h", 93, HOUR + 12 * MIN, 300], ["weekly", "Weekly", 63, 5 * DAY + 2 * HOUR, 10080]], [[1, "cr-c1", 12 * DAY, "codex_rate_limits", []]], 0, { r5: 10, rw: 15 }),
             ] },
         ],
     }
@@ -2667,6 +2746,7 @@ function demoLimits() {
                 return reserve > 0 && 100 - w.used_percent <= reserve
             })
             const status = a.status === "cooldown" && a.cooldownUntil && a.cooldownUntil < now ? "ok" : a.status
+            const options = (a.resets || []).filter((r) => r.available > 0 && r.expires > now).map((r) => ({ credit_id: r.id, available: r.available, expires_at: iso(r.expires), reset_type: r.reset_type, clears: r.clears, label: r.label }))
             return {
                 priority: a.priority,
                 quota_limit_percent: 0,
@@ -2683,7 +2763,7 @@ function demoLimits() {
                 observed_at: iso(a.source === "probe" ? now - (a.observed % 15000) - 2000 : a.observed),
                 error: a.error,
                 windows,
-                resets: a.resets && { available: a.resets.available, next_credit_id: a.resets.available ? a.resets.id : "", next_expires_at: a.resets.available ? iso(a.resets.expires) : null },
+                resets: a.resets && { available: options.reduce((sum, r) => sum + r.available, 0), next_credit_id: options[0]?.credit_id || "", next_expires_at: options[0]?.expires_at || null, options },
             }
         })
         const groups = new Map()
@@ -2747,25 +2827,26 @@ async function demoApi(path, init) {
         const { auth_index, credit_id } = JSON.parse(init.body)
         const a = demo.providers.flatMap((p) => p.accounts).find((x) => x.auth_index === auth_index)
         if (!a) throw new ApiError(404, "not_found", "unknown auth_index")
-        if (!a.resets?.available) return { outcome: "no_credit", warning: "" }
-        if (a.resets.id !== credit_id) return { outcome: "already_redeemed", warning: "" }
+        const credit = a.resets?.find((r) => r.id === credit_id)
+        if (!credit?.available || credit.expires <= Date.now()) return { outcome: "no_credit", warning: "" }
         if (a.auth_index === "cl-7f3a" && a.attempts++ === 0) throw new ApiError(502, "unconfirmed", "Upstream accepted the request but did not confirm the redemption.")
         const drift = ((Date.now() - demo.t0) / MIN) * 0.2
         for (const x of demo.providers.flatMap((p) => p.accounts)) {
             if (x.status === "ok") for (const w of x.wins) w.used = Math.min(100, w.used + drift * (w.kind === "five_hour" ? 1 : 0.2))
         }
-        a.resets.available--
-        a.resets.id = `${a.resets.id}-next`
-        a.status = "ok"
-        a.cooldownUntil = null
-        let warning = ""
+        credit.available--
+        if (credit.clears.includes("five_hour") || credit.reset_type === "codex_rate_limits") {
+            a.status = "ok"
+            a.cooldownUntil = null
+        }
         for (const w of a.wins) {
-            if (w.kind === "five_hour") { w.used = 0; w.resetsAt = Date.now() + 5 * HOUR }
-            else if (a.auth_index === "cl-91c0") warning = "Weekly window was not reset by upstream."
-            else { w.used = 0; w.resetsAt = Date.now() + 7 * DAY }
+            const key = w.kind === "weekly" ? "seven_day" : w.kind
+            if (!credit.clears.includes(key) && credit.reset_type !== "codex_rate_limits") continue
+            w.used = 0
+            w.resetsAt = Date.now() + (w.kind === "five_hour" ? 5 * HOUR : 7 * DAY)
         }
         demo.t0 = Date.now()
-        return { outcome: "reset", warning }
+        return { outcome: "reset", warning: "" }
     }
     throw new ApiError(404, "not_found", path)
 }
