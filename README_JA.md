@@ -60,6 +60,10 @@ PackyCodeは当ソフトウェアのユーザーに特別割引を提供して�
 <table>
 <tbody>
 <tr>
+<td width="180"><a href="https://www.aicodemirror.ai/register?invitecode=TJNAIF"><img src="./assets/aicodemirror.png" alt="AICodeMirror" width="150"></a></td>
+<td>AICodeMirrorのスポンサーシップに感謝します！AICodeMirrorはClaude Code / Codex / Gemini向けの公式高安定性リレーサービスを提供しており、エンタープライズグレードの同時接続、迅速な請求書発行、24時間365日の専任技術サポートを備えています。Claude Code / Codex / Geminiの公式チャネルが元の価格の38% / 2% / 9%で利用でき、チャージ時にはさらに割引があります！CLIProxyAPIユーザー向けの特別特典：<a href="https://www.aicodemirror.ai/register?invitecode=TJNAIF">こちらのリンク</a>から登録すると、初回チャージが20%割引になり、エンタープライズのお客様は最大25%割引を受けられます！</td>
+</tr>
+<tr>
 <td width="180"><a href="https://apikey.fan/register?aff=CLIProxyAPI"><img src="./assets/apikey.png" alt="APIKEY.FUN" width="150"></a></td>
 <td>APIKEY.FUNのスポンサーシップに感謝します！APIKEY.FUNはプロフェッショナルなエンタープライズ向けAIリレーサービスで、企業および個人開発者に安定・高効率・低コストなAIモデルAPI接続サービスを提供しています。Claude、OpenAI、Geminiなどの主要人気モデルに対応し、価格は公式価格の7%から利用できます。本プロジェクトの<a href="https://apikey.fan/register?aff=CLIProxyAPI">専用リンク</a>から登録すると、さらに<b>チャージが永続的に5%割引</b>となる特別優待を受けられます。</td>
 </tr>
@@ -109,6 +113,10 @@ PackyCodeは当ソフトウェアのユーザーに特別割引を提供して�
 <tr>
 <td width="180"><a href="https://x.com/chenju_ai"><img src="./assets/chenju.png" alt="Chenju" width="150"></a></td>
 <td><a href="https://x.com/chenju_ai">陈局 (Chenju)</a> による本プロジェクトへのご支援に感謝します！おそらくこの欄で唯一、登録リンクもプロモーションコードもない枠です。優れたオープンソースプロジェクトには対価が支払われるべきという想いから、メンテナーに敬意を表して一杯おごります。X の <a href="https://x.com/chenju_ai">@chenju_ai</a> で気軽に雑談しましょう。</td>
+</tr>
+<tr>
+<td width="180"><a href="https://origincoder.com/"><img src="./assets/origincoder.png" alt="OriginCoder" width="150"></a></td>
+<td><b><a href="https://origincoder.com/">OriginCoder</a> は、低遅延・高安定・高同時接続のエンタープライズ向け AI ゲートウェイです</b>。<b>Claude Max および GPT Pro のアカウントプールはすべて自社構築・自社運営で、品質低下のないプールは公式価格の 3〜4 割で提供され、プール内の品質低下状況はリアルタイムで公開・確認可能です</b>。<b>GPT、Claude、Grok、Gemini-4-Carbon、DeepSeek など国内外のモデル</b>に一つの入口から接続でき、<b>Claude Code</b> などのコーディングツールに対応し、複数チャネルで <b>AI 会話、コーディング、画像生成、動画生成</b>をサポートしています。海外で正規運営され、<b>2025 年 8 月の運営開始から 1.5 万以上の顧客にサービスを提供</b>しており、料金は公開、<b>超過料金なし、10 元からのチャージ</b>に対応しています。バックエンドでは <b>24 時間監視、アカウントプールの冗長化、マルチノード自動切替</b>により、ピーク時でも安定したアクセスを保障します。<a href="https://origincoder.com/monitor">サービスステータスは公開</a>されており、<b>ユーザーのセッション内容は保存せず、プライバシーを保護</b>しています。<b>法人決済と企業向け請求書発行</b>に対応し、カスタマーサポートは <b>3 分以内に応答</b>、技術チームが <b>24 時間常駐</b>しています。中国国内のユーザーは<a href="https://cn.origincoder.com">国内アクセラレーション入口</a>からアクセスできます。</td>
 </tr>
 </tbody>
 </table>
