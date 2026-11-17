@@ -44,9 +44,10 @@ function harness({ storage = new Map(), locks = { request: async (_name, pick) =
         crypto: { randomUUID },
     })
     vm.runInContext(resetScript, context)
-    const page = vm.runInContext("({ state, resetChoice, resetOptions, resetPopHtml, onLimitsClick, loadPending })", context)
+    const page = vm.runInContext("({ state, resetChoice, resetOptions, resetButtonHtml, resetPopHtml, onLimitsClick, loadPending })", context)
     const account = {
         auth_index: "account-1", label: "person@example.com", disabled: false,
+        resets_observed_at: new Date().toISOString(), resets_stale: false, resets_error: "",
         resets: {
             available: 3, next_credit_id: "session-grant",
             options: [
@@ -118,6 +119,93 @@ test("canceling a selection sends no redemption", async () => {
     await settle()
     assert.equal(h.calls.length, 0)
     assert.equal(h.page.state.resetUi.size, 0)
+})
+
+test("reset summaries distinguish unknown, fresh zero, stale inventory and read errors", () => {
+    const h = harness()
+    const summary = () => h.page.resetButtonHtml({ provider: "claude" }, [{ a: h.account }])
+    assert.match(summary(), />3 resets</)
+    h.account.resets_stale = true
+    assert.match(summary(), /3 resets · stale/)
+    assert.match(h.render(), /3 credits last known · stale/)
+    h.account.resets_error = "Credit endpoint failed"
+    assert.match(summary(), /3 resets · read error/)
+    assert.match(h.render(), /Credit read error/)
+    h.account.resets = null
+    assert.match(summary(), /Reset read error/)
+    h.account.resets_error = ""
+    assert.match(summary(), /Resets unknown/)
+    assert.match(h.render(), /Credits unknown/)
+    h.account.resets = { available: 0, options: [] }
+    h.account.resets_stale = false
+    assert.match(summary(), /No resets/)
+    assert.match(h.render(), /No credits/)
+})
+
+test("scoped windows show their own stale timestamp and accessible status", () => {
+    const h = harness()
+    Object.assign(h.context, { reserveOf: () => 0, paceAt: () => null, fmtPct: (value) => `${value}%`, round: (value) => value })
+    vm.runInContext(section("const winKey =", "// Reserves exist") + section("function cellHtml(", "function accountHtml("), h.context)
+    const cell = vm.runInContext("cellHtml", h.context)
+    const markup = cell({}, { kind: "other", label: "Weekly · Fable", used_percent: 71, stale: true, observed_at: "original-probe-time" })
+    assert.match(markup, /Weekly · Fable/)
+    assert.match(markup, /role="status">Stale · read original-probe-time/)
+    assert.match(markup, /aria-label="Weekly · Fable: 29% left, Stale/)
+    assert.doesNotMatch(cell({}, { kind: "other", label: "Weekly · Fable", used_percent: 71, stale: false }), /Stale/)
+})
+
+test("stale credit inventory stays readable but cannot start a new claim", async () => {
+    for (const change of [
+        (a) => { a.resets_stale = true },
+        (a) => { a.resets_error = "Credit endpoint failed" },
+        (a) => { a.resets_observed_at = new Date(Date.now() - 6 * 60000).toISOString() },
+        (a) => { a.resets_observed_at = null },
+    ]) {
+        const h = harness()
+        change(h.account)
+        assert.match(h.render(), /data-action="reset-open"[^>]* disabled/)
+        assert.match(h.render(), /Weekly reset/)
+        assert.equal(h.page.resetOptions(h.account).length, 0)
+        h.click("reset-open", "weekly-grant")
+        await settle()
+        assert.equal(h.calls.length, 0)
+        assert.equal(h.page.state.resetUi.size, 0)
+    }
+})
+
+test("credits aging after confirmation block spending but not an original unresolved retry", async () => {
+    const h = harness()
+    h.click("reset-open", "weekly-grant")
+    h.account.resets_stale = true
+    assert.match(h.render(), /data-action="reset-confirm"[^>]* disabled/)
+    h.click("reset-confirm")
+    await settle()
+    assert.equal(h.calls.length, 0)
+    assert.equal(h.page.state.resetUi.get("account-1").code, "stale_credits")
+
+    h.storage.set("cpa-usage-pending-claims", JSON.stringify({
+        "account-1": { creditId: "weekly-grant", requestId: "original-request", at: Date.now(), choice: { label: "Weekly reset", detail: "Resets: weekly." } },
+    }))
+    h.account.resets = null
+    h.account.resets_error = "Credit endpoint failed"
+    h.click("reset-open", "session-grant")
+    assert.match(h.render(), /Retry same credit/)
+    h.click("reset-retry")
+    await settle()
+    assert.deepEqual(h.calls[0].body, { auth_index: "account-1", credit_id: "weekly-grant", request_id: "original-request" })
+})
+
+test("credits becoming stale while waiting for the cross-tab lock cannot create a claim", async () => {
+    const lock = deferred()
+    const h = harness({ locks: { request: (_name, change) => lock.promise.then(change) } })
+    h.click("reset-open", "weekly-grant")
+    h.click("reset-confirm")
+    h.account.resets_stale = true
+    lock.resolve()
+    await settle()
+    assert.equal(h.calls.length, 0)
+    assert.equal(h.page.loadPending().size, 0)
+    assert.equal(h.page.state.resetUi.get("account-1").code, "stale_credits")
 })
 
 test("unconfirmed retries retain the selected type, credit and request ID after reload", async () => {

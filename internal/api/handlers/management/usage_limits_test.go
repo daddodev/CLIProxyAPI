@@ -202,6 +202,42 @@ func TestGetUsageLimitsCombinesProbedAccounts(t *testing.T) {
 	}
 }
 
+func TestGetUsageLimitsCodexConsecutiveSnapshotsPreserveWindowKinds(t *testing.T) {
+	auth := codexTestAuth("consecutive", "test@example.com")
+	h, recorded := newUsageTestHandler(t, []*coreauth.Auth{auth}, func(req *http.Request, _ []byte) *http.Response {
+		switch req.URL.String() {
+		case codexUsageURL:
+			return usageJSONResponse(http.StatusOK, `{"rate_limit":{
+				"primary_window":{"used_percent":30,"limit_window_seconds":18000},
+				"secondary_window":{"used_percent":70,"limit_window_seconds":604800}
+			}}`)
+		case codexCreditsURL:
+			return usageJSONResponse(http.StatusOK, `{"credits":[]}`)
+		default:
+			t.Errorf("unexpected provider read: %s", req.URL)
+			return usageJSONResponse(http.StatusNotFound, `{}`)
+		}
+	})
+	for snapshot := 1; snapshot <= 2; snapshot++ {
+		payload := getUsageLimits(t, h)
+		account := payload.Providers[0].Accounts[0]
+		if len(account.Windows) != 2 || account.Windows[0].Kind != windowFiveHour || account.Windows[0].WindowMinutes != 300 || account.Windows[0].UsedPercent != 30 || account.Windows[1].Kind != windowWeekly || account.Windows[1].WindowMinutes != 10080 || account.Windows[1].UsedPercent != 70 {
+			t.Fatalf("snapshot %d changed or duplicated Codex windows: %+v", snapshot, account.Windows)
+		}
+		current, ok := h.authManager.GetByID(auth.ID)
+		if !ok || current.Quota.ObservedAt.IsZero() {
+			t.Fatalf("snapshot %d did not feed the auth manager", snapshot)
+		}
+		headerWindows := usageWindowsFromSignals(current.Provider, current.Quota, time.Now())
+		if len(headerWindows) != 2 || headerWindows[0].Kind != windowFiveHour || headerWindows[1].Kind != windowWeekly {
+			t.Fatalf("snapshot %d lost durations in synthetic headers: %+v", snapshot, headerWindows)
+		}
+	}
+	if len(*recorded) != 2 {
+		t.Fatalf("consecutive snapshots made %d provider reads, want one usage and one credit read", len(*recorded))
+	}
+}
+
 func TestGetUsageLimitsFallsBackToHeaderSignals(t *testing.T) {
 	observed := time.Now().Add(-10 * time.Minute)
 	reset := time.Now().Add(90 * time.Minute).Unix()
@@ -325,7 +361,7 @@ func TestParseCodexResetCreditsExposesSortedOptions(t *testing.T) {
 	}
 }
 
-func TestUsageLimitsPreferRequestsUntilIdle(t *testing.T) {
+func TestUsageLimitsPreferHeadersWithBoundedSupplementalReads(t *testing.T) {
 	now := time.Now()
 	for _, provider := range []string{"claude", "codex"} {
 		t.Run(provider, func(t *testing.T) {
@@ -349,22 +385,26 @@ func TestUsageLimitsPreferRequestsUntilIdle(t *testing.T) {
 			current, _ := h.authManager.GetByID(auth.ID)
 			current.EnsureIndex()
 			// A stale probe with a conflicting value must not mask live traffic.
-			h.usageLimits.put(current.Index, 0, &usageProbe{at: now.Add(-time.Minute), windows: []usageWindow{{UsedPercent: 90}}})
+			probe := &usageProbe{at: now.Add(-time.Minute), windowsAt: now.Add(-time.Minute), windows: []usageWindow{{Kind: windowFiveHour, UsedPercent: 90}}}
+			h.usageLimits.put(current.Index, 0, probe)
 			for _, force := range []bool{false, true} {
 				account := h.usageAccountFor(context.Background(), current, now, force)
 				if account.Source != "headers" || account.Windows[0].UsedPercent != 42 || len(*recorded) != 0 {
 					t.Fatalf("force=%v: live observation did not win: %+v, calls=%d", force, account, len(*recorded))
 				}
 			}
-			// A request with no quota headers still prevents an extra usage read.
-			current.LastRequestAt = now.Add(4 * time.Minute)
-			h.usageAccountFor(context.Background(), current, now.Add(6*time.Minute), false)
-			if len(*recorded) != 0 {
-				t.Fatal("active credential triggered a standalone usage read")
-			}
-			h.usageAccountFor(context.Background(), current, now.Add(9*time.Minute), false)
+			// Traffic cannot postpone credit/scoped-window reads indefinitely.
+			current.LastRequestAt = now
+			stale := *probe
+			stale.at = now.Add(-usageLimitsTTL)
+			h.usageLimits.put(current.Index, 0, &stale)
+			h.usageAccountFor(context.Background(), current, now, false)
 			if len(*recorded) != 1 {
-				t.Fatalf("idle credential made %d usage reads, want 1", len(*recorded))
+				t.Fatalf("active credential made %d usage reads, want 1", len(*recorded))
+			}
+			h.usageAccountFor(context.Background(), current, now.Add(time.Minute), true)
+			if len(*recorded) != 1 {
+				t.Fatal("active credential bypassed usage-read backoff")
 			}
 		})
 	}
@@ -400,6 +440,191 @@ func TestUsageProbeSharedReadSurvivesCanceledSubscriber(t *testing.T) {
 	probe := h.cachedUsageProbe(context.Background(), auth, now, false)
 	if probe.err != "" || len(probe.windows) != 1 || len(*recorded) != 1 {
 		t.Fatalf("expected one successful shared read: probe=%+v calls=%d", probe, len(*recorded))
+	}
+}
+
+func TestUsageLimitsActiveAccountsRetainSupplementalDataAfterReadFailure(t *testing.T) {
+	for _, provider := range []string{"claude", "codex"} {
+		t.Run(provider, func(t *testing.T) {
+			now := time.Now()
+			auth := claudeTestAuth("active", "active@example.com")
+			if provider == "codex" {
+				auth = codexTestAuth("active", "active@example.com")
+			}
+			auth.LastRequestAt = now
+			failed := false
+			h, recorded := newUsageTestHandler(t, []*coreauth.Auth{auth}, func(req *http.Request, _ []byte) *http.Response {
+				if failed && (provider == "claude" || req.URL.String() == codexCreditsURL) {
+					return usageJSONResponse(http.StatusServiceUnavailable, `{}`)
+				}
+				if provider == "claude" {
+					return usageJSONResponse(http.StatusOK, `{"five_hour":{"utilization":25},"seven_day":{"utilization":30},"limits":[{"kind":"weekly_scoped","percent":71,"scope":{"model":{"display_name":"Fable"}}}],"cedar_ember":{"eligible":true,"next_grant_id":"grant","grants":[{"id":"grant","resets_left":3,"usable_now":true}]}}`)
+				}
+				if req.URL.String() == codexUsageURL {
+					return usageJSONResponse(http.StatusOK, `{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":25,"limit_window_seconds":18000},"secondary_window":{"used_percent":30,"limit_window_seconds":604800}}}`)
+				}
+				return usageJSONResponse(http.StatusOK, fmt.Sprintf(`{"credits":[{"id":"credit","status":"available","reset_type":"codex_rate_limits","expires_at":%q}]}`, now.Add(time.Hour).Format(time.RFC3339)))
+			})
+			current, _ := h.authManager.GetByID(auth.ID)
+			current.EnsureIndex()
+			// An active account with no probe must still discover its credits.
+			first := h.usageAccountFor(context.Background(), current, now, false)
+			if first.Resets == nil || first.Resets.Available == 0 || first.ResetsStale || first.ResetsObservedAt == nil {
+				t.Fatalf("active account did not discover fresh credits: %+v", first)
+			}
+			calls := 1
+			if provider == "codex" {
+				calls = 2
+			}
+			old, _ := h.usageLimits.get(current.Index, now, false)
+			aged := *old
+			aged.at, aged.windowsAt, aged.resetsAt = now.Add(-6*time.Minute), now.Add(-6*time.Minute), now.Add(-6*time.Minute)
+			h.usageLimits.put(current.Index, 0, &aged)
+			current.Quota = coreauth.QuotaState{ObservedAt: now, Signals: map[string]string{
+				"Anthropic-Ratelimit-Unified-5h-Utilization": "0.42",
+			}}
+			if provider == "codex" {
+				current.Quota.Signals = map[string]string{"X-Codex-Primary-Used-Percent": "42", "X-Codex-Primary-Window-Minutes": "300"}
+			}
+			failed = true
+			second := h.usageAccountFor(context.Background(), current, now, false)
+			if second.Resets == nil || second.Resets.Available != first.Resets.Available || !second.ResetsStale || second.ResetsError == "" || !second.ResetsObservedAt.Equal(aged.resetsAt) {
+				t.Fatalf("failed read lost inventory or changed its freshness: %+v", second)
+			}
+			if provider == "claude" {
+				if second.Source != "headers" || len(second.Windows) != 3 || second.Windows[0].UsedPercent != 42 || second.Windows[0].Stale || second.Windows[2].Label != "Weekly · Fable" || !second.Windows[2].Stale || !second.Windows[2].ObservedAt.Equal(aged.windowsAt) {
+					t.Fatalf("fresh headers lost scoped data or its own age: %+v", second.Windows)
+				}
+			} else if second.Error != "" || second.Source != "probe" || second.Windows[0].Stale {
+				t.Fatalf("optional credit failure contaminated successful usage: %+v", second)
+			}
+			for _, force := range []bool{false, true} {
+				h.usageAccountFor(context.Background(), current, now.Add(time.Minute), force)
+			}
+			if len(*recorded) != calls*2 {
+				t.Fatalf("refresh was not shared/bounded: calls=%d, want %d", len(*recorded), calls*2)
+			}
+		})
+	}
+}
+
+func TestUsageLimitsMergesPartialHeadersWithIndependentProbeFreshness(t *testing.T) {
+	now := time.Now()
+	for _, age := range []time.Duration{time.Minute, 6 * time.Minute} {
+		t.Run(age.String(), func(t *testing.T) {
+			auth := claudeTestAuth("merged", "test@example.com")
+			auth.Quota = coreauth.QuotaState{ObservedAt: now, Signals: map[string]string{"Anthropic-Ratelimit-Unified-5h-Utilization": "0.42"}}
+			h, recorded := newUsageTestHandler(t, []*coreauth.Auth{auth}, func(*http.Request, []byte) *http.Response {
+				t.Fatal("a retained read backoff must not be bypassed")
+				return nil
+			})
+			current, _ := h.authManager.GetByID(auth.ID)
+			current.EnsureIndex()
+			at := now.Add(-age)
+			h.usageLimits.put(current.Index, 0, &usageProbe{at: at, windowsAt: at, resetsAt: at, retryAt: now.Add(time.Hour),
+				windows: []usageWindow{
+					newUsageWindow(windowFiveHour, "5h", 80, time.Time{}, 300),
+					newUsageWindow(windowWeekly, "Weekly", 60, time.Time{}, 10080),
+					newUsageWindow(windowOther, "Weekly · Fable", 71, time.Time{}, 10080),
+				}, resets: &usageResets{Available: 2}})
+			account := h.usageAccountFor(context.Background(), current, now, true)
+			stale := age >= usageLimitsTTL
+			if len(account.Windows) != 3 || account.Windows[0].UsedPercent != 42 || account.Windows[0].Stale || account.Windows[1].UsedPercent != 60 || account.Windows[2].Label != "Weekly · Fable" || account.Windows[2].Stale != stale || !account.Windows[2].ObservedAt.Equal(at) {
+				t.Fatalf("partial headers lost probe windows or freshness: %+v", account.Windows)
+			}
+			if account.Resets == nil || account.Resets.Available != 2 || account.ResetsStale != stale || !account.ResetsObservedAt.Equal(at) || len(*recorded) != 0 {
+				t.Fatalf("inference timestamps refreshed credit data: %+v", account)
+			}
+		})
+	}
+}
+
+func TestCodexCreditReadsFailAndThrottleIndependently(t *testing.T) {
+	for _, failure := range []string{"rate limit", "server error", "invalid JSON", "missing credits", "transport"} {
+		t.Run(failure, func(t *testing.T) {
+			now := time.Now()
+			h := &Handler{}
+			calls := 0
+			h.usageTransport = usageRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.String() == codexUsageURL {
+					return usageJSONResponse(http.StatusOK, `{"rate_limit":{"primary_window":{"used_percent":25,"limit_window_seconds":18000}}}`), nil
+				}
+				calls++
+				switch failure {
+				case "rate limit":
+					resp := usageJSONResponse(http.StatusTooManyRequests, `{}`)
+					resp.Header.Set("Retry-After", "900")
+					return resp, nil
+				case "server error":
+					return usageJSONResponse(http.StatusServiceUnavailable, `{}`), nil
+				case "invalid JSON":
+					return usageJSONResponse(http.StatusOK, `invalid`), nil
+				case "missing credits":
+					return usageJSONResponse(http.StatusOK, `{}`), nil
+				default:
+					return nil, fmt.Errorf("transport failed")
+				}
+			})
+			previous := &usageProbe{resets: &usageResets{Available: 2}, resetsAt: now.Add(-6 * time.Minute)}
+			probe := h.probeUsage(context.Background(), codexTestAuth("credit-failure", "test@example.com"), previous)
+			if probe.err != "" || len(probe.windows) != 1 || probe.resetsErr == "" || probe.resets.Available != 2 || !probe.resetsAt.Equal(previous.resetsAt) || !probe.resetsRetryAt.After(now) {
+				t.Fatalf("credit failure was hidden or discarded successful data: %+v", probe)
+			}
+			if failure == "rate limit" && (probe.resetsRetryAt.Before(now.Add(15*time.Minute)) || probe.resetsBackoff != 5*time.Minute) {
+				t.Fatalf("credit Retry-After not honored: %+v", probe)
+			}
+			next := h.probeUsage(context.Background(), codexTestAuth("credit-failure", "test@example.com"), probe)
+			if calls != 1 || next.resetsErr != probe.resetsErr || !next.resetsAt.Equal(probe.resetsAt) {
+				t.Fatalf("successful usage bypassed credit backoff or refreshed credits: calls=%d probe=%+v", calls, next)
+			}
+		})
+	}
+}
+
+func TestUsageLimitsInvalidationClearsSupplementalDataButPreservesCreditBackoff(t *testing.T) {
+	now := time.Now()
+	var cache usageLimitsCache
+	cache.put("account", 0, &usageProbe{at: now, windowsAt: now, resetsAt: now, resets: &usageResets{Available: 2}, windows: []usageWindow{{Kind: windowWeekly}},
+		resetsErr: "rate limited", resetsRetryAt: now.Add(time.Hour), resetsBackoff: 10 * time.Minute})
+	cache.invalidate("account")
+	probe, fresh := cache.get("account", now, true)
+	if probe == nil || fresh || probe.resets != nil || !probe.resetsAt.IsZero() || len(probe.windows) != 0 || !probe.resetsRetryAt.Equal(now.Add(time.Hour)) || probe.resetsBackoff != 10*time.Minute {
+		t.Fatalf("reset retained old data or dropped independent backoff: %+v, fresh=%v", probe, fresh)
+	}
+	cache.put("account", 0, &usageProbe{at: now, resets: &usageResets{Available: 3}})
+	if current, _ := cache.get("account", now, true); current != probe {
+		t.Fatal("a pre-reset read restored credits across the generation barrier")
+	}
+}
+
+func TestCodexCreditBackoffIncreasesAndFreshZeroReplacesLastKnownInventory(t *testing.T) {
+	h := &Handler{}
+	limited := true
+	h.usageTransport = usageRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() == codexUsageURL {
+			return usageJSONResponse(http.StatusOK, `{"rate_limit":{}}`), nil
+		}
+		if limited {
+			return usageJSONResponse(http.StatusTooManyRequests, `{}`), nil
+		}
+		return usageJSONResponse(http.StatusOK, `{"credits":[]}`), nil
+	})
+	auth := codexTestAuth("credit-backoff", "test@example.com")
+	previous := &usageProbe{resets: &usageResets{Available: 2}, resetsAt: time.Now().Add(-time.Hour)}
+	for _, wait := range []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 30 * time.Minute, 30 * time.Minute} {
+		// Move the deadline, not the wall clock, to permit another attempt.
+		previous.resetsRetryAt = time.Time{}
+		probe := h.probeUsage(context.Background(), auth, previous)
+		if probe.resetsBackoff != wait || probe.resetsRetryAt.Before(probe.at.Add(wait-time.Second)) || !probe.resetsAt.Equal(previous.resetsAt) {
+			t.Fatalf("independent credit backoff or observation changed: %+v, want %v", probe, wait)
+		}
+		previous = probe
+	}
+	limited = false
+	previous.resetsRetryAt = time.Time{}
+	probe := h.probeUsage(context.Background(), auth, previous)
+	if probe.resets == nil || probe.resets.Available != 0 || probe.resetsErr != "" || !probe.resetsRetryAt.IsZero() || probe.resetsBackoff != 0 || !probe.resetsAt.After(previous.resetsAt) {
+		t.Fatalf("successful empty inventory did not replace stale credits or clear backoff: %+v", probe)
 	}
 }
 
@@ -561,6 +786,28 @@ func TestUsageLimitsCacheIgnoresProbeStartedBeforeInvalidation(t *testing.T) {
 	}
 }
 
+func TestUsageProbeDoesNotReturnSupplementalDataAcrossResetGeneration(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	h, _ := newUsageTestHandler(t, []*coreauth.Auth{claudeTestAuth("inflight-reset", "test@example.com")}, func(*http.Request, []byte) *http.Response {
+		close(started)
+		<-release
+		return usageJSONResponse(http.StatusOK, `{"limits":[{"kind":"weekly_scoped","percent":71,"scope":{"model":{"display_name":"Fable"}}}],"cedar_ember":{"eligible":true,"grants":[{"id":"old-grant","resets_left":2,"usable_now":true}]}}`)
+	})
+	auth, _ := h.authManager.GetByID("inflight-reset")
+	auth.EnsureIndex()
+	result := make(chan *usageProbe, 1)
+	go func() { result <- h.cachedUsageProbe(context.Background(), auth, time.Now(), false) }()
+	<-started
+	h.usageLimits.invalidate(auth.Index)
+	close(release)
+	if probe := <-result; probe != nil {
+		t.Fatalf("pre-reset supplemental data returned to a subscriber: %+v", probe)
+	}
+	if probe, _ := h.usageLimits.get(auth.Index, time.Now(), false); probe != nil {
+		t.Fatalf("pre-reset supplemental data restored to the cache: %+v", probe)
+	}
+}
+
 func TestUsageRateLimitRetryAt(t *testing.T) {
 	now := time.Date(2026, time.October, 26, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
@@ -625,7 +872,7 @@ func TestUsageLimitsResetRefreshesDataWithoutBypassingReadBackoff(t *testing.T) 
 	limited := &usageProbe{at: now, err: "rate limited", retryAt: now.Add(time.Hour)}
 	h.usageLimits.put(current.Index, h.usageLimits.generation(current.Index), limited)
 	h.usageLimits.invalidate(current.Index)
-	if got, fresh := h.usageLimits.get(current.Index, now, true); !fresh || got != limited {
+	if got, fresh := h.usageLimits.get(current.Index, now, true); !fresh || !got.retryAt.Equal(limited.retryAt) || got.backoff != limited.backoff || got.resets != nil || len(got.windows) != 0 {
 		t.Fatal("reset invalidation must preserve active usage-read backoff")
 	}
 }

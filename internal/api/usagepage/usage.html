@@ -835,6 +835,8 @@ async function claimFor(id, credit, choice) {
     return updatePending((pending) => {
         const existing = pending.get(id)
         if (existing) return existing
+        const account = findAccount(id)
+        if (account?.disabled || !resetOptions(account).some((o) => o.credit_id === credit)) return null
         const claim = { creditId: credit, requestId: newRequestId(), choice, at: Date.now() }
         pending.set(id, claim)
         return claim
@@ -1242,13 +1244,15 @@ function cellHtml(a, w) {
     const elapsed = paceAt(w)
     const label = w.kind === "other" ? `<span class="cell-k" title="${esc(w.label)}">${esc(w.label)}</span>` : ""
     const stop = reserve ? `<span class="cell-res${usable <= 0 ? " hit" : ""}" title="Routing skips this account once ${esc(fmtPct(reserve))} is left">${usable <= 0 ? "stopped" : "stops"} at ${esc(fmtPct(reserve))}</span>` : ""
-    const aria = `${w.label}: ${fmtPct(left)} left${reserve ? `, routing stops at ${fmtPct(reserve)}` : ""}`
+    const freshness = w.stale ? `Stale${w.observed_at ? ` · read ${absShort(w.observed_at)}` : ""}` : ""
+    const aria = `${w.label}: ${fmtPct(left)} left${reserve ? `, routing stops at ${fmtPct(reserve)}` : ""}${freshness ? `, ${freshness}` : ""}`
     const key = state.edit && RESERVE_KEY[w.kind]
     const bar = `<div class="bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${round(left, 1)}" aria-label="${esc(aria)}"><i class="held" style="width:${round(Math.min(left, reserve), 2)}%"></i><i style="left:${round(reserve, 2)}%;width:${round(Math.max(0, usable), 2)}%"></i>${reserve ? `<span class="zone" style="width:${round(reserve, 2)}%"></span>` : ""}${elapsed != null ? `<b style="left:${round(100 - elapsed, 2)}%" title="Even pace"></b>` : ""}</div>`
     return `<div class="cell${tone}" data-key="w-${esc(winKey(w))}">
         <div class="cell-top">${label}<span class="cell-v"><b>${esc(fmtPct(left))}</b> left</span>${key ? reserveInputHtml(a, w, key, reserve) : stop}</div>
         ${key ? reserveBarHtml(a, w, key, reserve, bar) : bar}
         <div class="cell-reset">${w.resets_at ? `<b data-rel="${esc(w.resets_at)}">${esc(relTime(w.resets_at))}</b><span class="abs"> · ${esc(absShort(w.resets_at))}</span>` : "no reset time"}</div>
+        ${freshness ? `<div class="cell-reset" role="status">${esc(freshness)}</div>` : ""}
     </div>`
 }
 
@@ -1299,6 +1303,7 @@ const ERRORS = {
     not_found: "Account or credit not found.",
     invalid_request: "The proxy rejected the request.",
     upstream_failed: "The upstream request failed.",
+    stale_credits: "Refresh reset credits before starting a new redemption.",
 }
 
 function describeOutcome(ui) {
@@ -1322,16 +1327,27 @@ function resetChoice(option) {
     return { label, detail }
 }
 
-function resetOptions(a) {
+function resetCreditsFresh(a) {
+    const observed = new Date(a?.resets_observed_at).getTime()
+    return !!a?.resets && !a.resets_stale && !a.resets_error && Number.isFinite(observed) && observed > Date.now() - 5 * 60000
+}
+
+function resetOptions(a, includeStale = false) {
+    if (!includeStale && !resetCreditsFresh(a)) return []
     return (a?.resets?.options || []).filter((o) => o.credit_id && o.available > 0 && (!o.expires_at || new Date(o.expires_at).getTime() > Date.now()))
 }
 
 function resetButtonHtml(p, rows) {
-    const resets = Number(p.resets_available) || 0
+    const accounts = rows.map((r) => r.a).filter((a) => !a.disabled)
+    const resets = accounts.reduce((sum, a) => sum + (Number(a.resets?.available) || 0), 0)
+    const failed = accounts.some((a) => a.resets_error)
+    const stale = accounts.some((a) => a.resets && !resetCreditsFresh(a))
+    const unknown = accounts.some((a) => !a.resets)
     const uis = rows.map((r) => state.resetUi.get(r.a.auth_index)).filter(Boolean)
     const busy = uis.some((u) => u.phase === "busy")
     const alert = uis.some((u) => u.phase === "done")
-    const text = busy ? "Redeeming…" : resets > 0 ? `${nf.format(resets)} reset${resets > 1 ? "s" : ""}` : "No resets"
+    const count = `${nf.format(resets)} reset${resets !== 1 ? "s" : ""}`
+    const text = busy ? "Redeeming…" : failed ? (resets ? `${count} · read error` : "Reset read error") : stale ? `${count} · stale` : unknown ? (resets ? `${count} · incomplete` : "Resets unknown") : resets ? count : "No resets"
     return `<button class="reset-btn${resets > 0 ? " has" : ""}${alert ? " alert" : ""}" type="button" data-action="resets" data-provider="${esc(p.provider)}" data-focus="resets-${esc(p.provider)}" aria-haspopup="dialog" aria-controls="reset-pop" aria-expanded="${state.resetPop === p.provider}"${alert ? ` title="A reset attempt has a result to review"` : ""}>${busy ? `<span class="spin" aria-hidden="true"></span>` : ""}${esc(text)}<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button>`
 }
 
@@ -1340,13 +1356,16 @@ function resetPopHtml(p, rows) {
         const r = a.resets
         const ui = state.resetUi.get(a.auth_index)
         const id = esc(a.auth_index)
-        const sub = !r ? "Credits not reported" : !r.available ? "No credits" : `${nf.format(r.available)} credit${r.available > 1 ? "s" : ""}`
+        const fresh = resetCreditsFresh(a)
+        const count = !r ? "Credits unknown" : !r.available ? "No credits" : `${nf.format(r.available)} credit${r.available > 1 ? "s" : ""}`
+        const sub = a.resets_error ? `${r ? `${count} last known · ` : ""}Credit read error` : r && !fresh ? `${count} last known · stale` : count
+        const readNote = [a.resets_error, a.resets_observed_at ? `Last read ${absShort(a.resets_observed_at)}.` : "", a.resets_retry_at ? `Next read no earlier than ${absShort(a.resets_retry_at)}.` : "", r && !fresh ? "Refresh credits before using a new reset." : ""].filter(Boolean).join(" ")
         const unresolved = ui?.phase === "done" && describeOutcome(ui).retry
-        const options = resetOptions(a).map((option) => {
+        const options = resetOptions(a, true).map((option) => {
             const choice = resetChoice(option)
             const credit = esc(option.credit_id)
             const selected = ui?.creditId === option.credit_id && (ui.phase === "confirm" || ui.phase === "busy")
-            const disabled = !resetCoordinationAvailable() || a.disabled || ui?.phase === "busy" || ui?.phase === "confirm" || unresolved
+            const disabled = !fresh || !resetCoordinationAvailable() || a.disabled || ui?.phase === "busy" || ui?.phase === "confirm" || unresolved
             return `<li class="reset-option${selected ? " is-selected" : ""}" data-key="credit-${credit}">
                 <div class="reset-option-head"><div class="reset-option-title">${esc(choice.label)}</div><button class="btn btn-accent" type="button" data-action="reset-open" data-id="${id}" data-credit="${credit}" data-focus="open-${id}-${credit}" aria-label="${esc(`Use ${choice.label} on ${a.label}${option.label ? `: ${option.label}` : ""}`)}"${disabled ? " disabled" : ""}>${selected && ui.phase === "busy" ? `<span class="spin" aria-hidden="true"></span>Redeeming…` : "Use reset"}</button></div>
                 ${option.label && option.label !== choice.label ? `<p class="reset-option-label">${esc(option.label)}</p>` : ""}
@@ -1360,7 +1379,7 @@ function resetPopHtml(p, rows) {
                 <p>Use <b>${esc(ui.choice.label)}</b> on <b>${esc(a.label)}</b>? ${esc(ui.choice.detail)} This spends one credit and can't be undone.</p>
                 <div class="confirm-actions">
                     <button class="btn btn-ghost" type="button" data-action="reset-cancel" data-id="${id}" data-credit="${esc(ui.creditId)}" data-focus="cancel-${id}">Cancel</button>
-                    <button class="btn btn-commit" type="button" data-action="reset-confirm" data-id="${id}"${resetCoordinationAvailable() ? "" : " disabled"}>Redeem</button>
+                    <button class="btn btn-commit" type="button" data-action="reset-confirm" data-id="${id}"${fresh && resetCoordinationAvailable() ? "" : " disabled"}>Redeem</button>
                 </div>
             </div>`
         } else if (ui?.phase === "done") {
@@ -1372,6 +1391,7 @@ function resetPopHtml(p, rows) {
         }
         return `<li class="pop-item" data-key="pr-${id}" style="--c:${color}">
             <div class="pop-row"><span class="sw" aria-hidden="true"></span><div class="pop-txt"><div class="pop-label" title="${esc(a.label)}">${esc(a.label)}</div><div class="pop-sub">${esc(sub)}</div></div></div>
+            ${readNote ? `<p class="reset-option-detail" role="status">${esc(readNote)}</p>` : ""}
             ${options ? `<ul class="reset-options" aria-label="Reset options for ${esc(a.label)}">${options}</ul>` : ""}
             ${ui?.phase === "busy" && ui.choice ? `<div class="reset-claim" role="status">Redeeming ${esc(ui.choice.label)}…</div>` : ""}
             ${msg}
@@ -1609,6 +1629,10 @@ async function onLimitsClick(e) {
                 break
             }
             const a = findAccount(id)
+            if (a?.resets && !resetCreditsFresh(a)) {
+                setResetUi(id, { phase: "done", code: "stale_credits" })
+                break
+            }
             if (a?.disabled || !resetOptions(a).some((o) => o.credit_id === ui.creditId)) {
                 setResetUi(id, { phase: "done", code: "not_found", message: "The selected reset is no longer available. Choose another reset." })
                 break
@@ -1616,7 +1640,8 @@ async function onLimitsClick(e) {
             // Disable confirmation before awaiting the cross-tab lock.
             setResetUi(id, { ...ui, phase: "busy" })
             claimFor(id, ui.creditId, ui.choice).then((claim) => {
-                if (claim.creditId !== ui.creditId) setResetUi(id, pendingUi(claim), `retry-${id}`)
+                if (!claim) setResetUi(id, { phase: "done", code: "stale_credits" })
+                else if (claim.creditId !== ui.creditId) setResetUi(id, pendingUi(claim), `retry-${id}`)
                 else redeem(id, claim.creditId, claim.requestId, claim.choice)
             })
             break
@@ -2764,6 +2789,9 @@ function demoLimits() {
                 error: a.error,
                 windows,
                 resets: a.resets && { available: options.reduce((sum, r) => sum + r.available, 0), next_credit_id: options[0]?.credit_id || "", next_expires_at: options[0]?.expires_at || null, options },
+                resets_observed_at: a.resets ? iso(now) : null,
+                resets_stale: false,
+                resets_error: a.error,
             }
         })
         const groups = new Map()
