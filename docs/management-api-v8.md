@@ -358,6 +358,10 @@ section that cannot be read is null and has a `limits_error` or `history_error`
 message; disabled history does not prevent subscription updates. The stream
 accepts `granularity` (`minute`, `hour`, `day`, `month`), `tz` (an IANA time zone),
 and optional `buckets` (1–1000). Its history range advances in that time zone.
+On either the history or stream endpoint, `breakdown=true` adds range totals
+under `history.breakdown` in stream snapshots or `breakdown` in direct history
+responses. The `projects`, `accounts`, and `project_accounts` arrays are three
+views of the same usage. See [project attribution setup](usage-attribution.md).
 Changes to usage observations and recorded tokens trigger snapshots, coalesced
 over 250 ms. A snapshot every 30 seconds keeps idle streams alive and advances
 idle refresh deadlines and chart windows. Clients reconnect for a fresh snapshot

@@ -28,13 +28,13 @@ const (
 	maxPending = 50000
 )
 
-const schema = `
-CREATE TABLE IF NOT EXISTS usage_minute (
+const rollupSchema = ` (
 	bucket INTEGER NOT NULL,
 	provider TEXT NOT NULL,
 	model TEXT NOT NULL,
 	auth_index TEXT NOT NULL,
 	tier TEXT NOT NULL,
+	project TEXT NOT NULL DEFAULT '',
 	requests INTEGER NOT NULL DEFAULT 0 CHECK (requests >= 0),
 	failed INTEGER NOT NULL DEFAULT 0 CHECK (failed >= 0),
 	uncached_input INTEGER NOT NULL DEFAULT 0 CHECK (uncached_input >= 0),
@@ -43,24 +43,11 @@ CREATE TABLE IF NOT EXISTS usage_minute (
 	output INTEGER NOT NULL DEFAULT 0 CHECK (output >= 0),
 	reasoning INTEGER NOT NULL DEFAULT 0 CHECK (reasoning >= 0),
 	unclassified INTEGER NOT NULL DEFAULT 0 CHECK (unclassified >= 0),
-	PRIMARY KEY (bucket, provider, model, auth_index, tier)
-) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS usage_hour (
-	bucket INTEGER NOT NULL,
-	provider TEXT NOT NULL,
-	model TEXT NOT NULL,
-	auth_index TEXT NOT NULL,
-	tier TEXT NOT NULL,
-	requests INTEGER NOT NULL DEFAULT 0 CHECK (requests >= 0),
-	failed INTEGER NOT NULL DEFAULT 0 CHECK (failed >= 0),
-	uncached_input INTEGER NOT NULL DEFAULT 0 CHECK (uncached_input >= 0),
-	cache_read INTEGER NOT NULL DEFAULT 0 CHECK (cache_read >= 0),
-	cache_write INTEGER NOT NULL DEFAULT 0 CHECK (cache_write >= 0),
-	output INTEGER NOT NULL DEFAULT 0 CHECK (output >= 0),
-	reasoning INTEGER NOT NULL DEFAULT 0 CHECK (reasoning >= 0),
-	unclassified INTEGER NOT NULL DEFAULT 0 CHECK (unclassified >= 0),
-	PRIMARY KEY (bucket, provider, model, auth_index, tier)
-) WITHOUT ROWID;
+	PRIMARY KEY (bucket, provider, model, auth_index, tier, project)
+) WITHOUT ROWID;`
+
+const schema = `CREATE TABLE IF NOT EXISTS usage_minute` + rollupSchema + `;
+CREATE TABLE IF NOT EXISTS usage_hour` + rollupSchema + `;
 CREATE TABLE IF NOT EXISTS usage_import_state (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	before INTEGER NOT NULL
@@ -72,7 +59,7 @@ CREATE TABLE IF NOT EXISTS usage_import_events (
 
 const counterColumns = "requests, failed, uncached_input, cache_read, cache_write, output, reasoning, unclassified"
 
-const upsertSuffix = ` ON CONFLICT (bucket, provider, model, auth_index, tier) DO UPDATE SET
+const upsertSuffix = ` ON CONFLICT (bucket, provider, model, auth_index, tier, project) DO UPDATE SET
 	requests = requests + excluded.requests,
 	failed = failed + excluded.failed,
 	uncached_input = uncached_input + excluded.uncached_input,
@@ -89,6 +76,7 @@ type rollupKey struct {
 	Model     string
 	AuthIndex string
 	Tier      string
+	Project   string
 }
 
 // Counters holds additive token and request counts.
@@ -149,7 +137,7 @@ func openWithClock(path string, now func() time.Time) (*Store, error) {
 	// One connection serializes writers and readers inside the process; WAL
 	// keeps reads cheap and the batched writer keeps transactions short.
 	db.SetMaxOpenConns(1)
-	if _, errSchema := db.Exec(schema); errSchema != nil {
+	if errSchema := prepareSchema(db); errSchema != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("create usage history schema: %w", errSchema)
 	}
@@ -187,13 +175,14 @@ func (s *Store) Close() error {
 }
 
 // add buffers counters for the minute containing at.
-func (s *Store) add(at time.Time, provider, model, authIndex, tier string, c Counters) {
+func (s *Store) add(at time.Time, provider, model, authIndex, tier, project string, c Counters) {
 	key := rollupKey{
 		Bucket:    at.UTC().Truncate(time.Minute).Unix(),
 		Provider:  provider,
 		Model:     model,
 		AuthIndex: authIndex,
 		Tier:      tier,
+		Project:   project,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -287,14 +276,14 @@ func (s *Store) write(batch map[rollupKey]Counters) error {
 	if errBegin != nil {
 		return errBegin
 	}
-	stmt, errPrepare := tx.Prepare(`INSERT INTO usage_minute (bucket, provider, model, auth_index, tier, ` + counterColumns + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` + upsertSuffix)
+	stmt, errPrepare := tx.Prepare(`INSERT INTO usage_minute (bucket, provider, model, auth_index, tier, project, ` + counterColumns + `)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` + upsertSuffix)
 	if errPrepare != nil {
 		_ = tx.Rollback()
 		return errPrepare
 	}
 	for key, c := range batch {
-		if _, errExec := stmt.Exec(key.Bucket, key.Provider, key.Model, key.AuthIndex, key.Tier,
+		if _, errExec := stmt.Exec(key.Bucket, key.Provider, key.Model, key.AuthIndex, key.Tier, key.Project,
 			c.Requests, c.Failed, c.UncachedInput, c.CacheRead, c.CacheWrite, c.Output, c.Reasoning, c.Unclassified); errExec != nil {
 			_ = stmt.Close()
 			_ = tx.Rollback()
@@ -316,11 +305,11 @@ func (s *Store) compact() {
 		log.WithError(errBegin).Error("usage history: compaction begin failed")
 		return
 	}
-	_, errInsert := tx.Exec(`INSERT INTO usage_hour (bucket, provider, model, auth_index, tier, `+counterColumns+`)
-		SELECT (bucket / 3600) * 3600, provider, model, auth_index, tier,
+	_, errInsert := tx.Exec(`INSERT INTO usage_hour (bucket, provider, model, auth_index, tier, project, `+counterColumns+`)
+		SELECT (bucket / 3600) * 3600, provider, model, auth_index, tier, project,
 			SUM(requests), SUM(failed), SUM(uncached_input), SUM(cache_read), SUM(cache_write), SUM(output), SUM(reasoning), SUM(unclassified)
 		FROM usage_minute WHERE bucket < ?
-		GROUP BY (bucket / 3600) * 3600, provider, model, auth_index, tier`+upsertSuffix, cutoff)
+		GROUP BY (bucket / 3600) * 3600, provider, model, auth_index, tier, project`+upsertSuffix, cutoff)
 	if errInsert != nil {
 		_ = tx.Rollback()
 		log.WithError(errInsert).Error("usage history: compaction failed")
@@ -338,30 +327,40 @@ func (s *Store) compact() {
 
 // Row is one aggregated query row.
 type Row struct {
-	Bucket   time.Time
-	Provider string
-	Model    string
-	Tier     string
+	Bucket    time.Time
+	Provider  string
+	Model     string
+	Tier      string
+	Project   string
+	AuthIndex string
+	Summary   bool
 	Counters
 }
 
-// queryRows returns rows in [from, to) at their stored resolution: recent
-// rows per minute and compacted rows per hour. Callers bucket them, so local
-// day boundaries in half-hour time zones stay exact for the last 7 days.
-// Older hourly rows land in the bucket containing their hour start.
-func (s *Store) queryRows(ctx context.Context, from, to time.Time) ([]Row, error) {
+// queryRows returns chart rows at their stored resolution and, when requested,
+// range-wide attribution rows. One statement keeps both views on the same
+// snapshot without returning a project/account cross-product for every minute.
+func (s *Store) queryRows(ctx context.Context, from, to time.Time, breakdown bool) ([]Row, error) {
 	// Include rows still buffered in memory so the dashboard is live.
 	if errFlush := s.flush(); errFlush != nil {
 		log.WithError(errFlush).Warn("usage history: flush before query failed")
 	}
 
 	sums := "SUM(requests), SUM(failed), SUM(uncached_input), SUM(cache_read), SUM(cache_write), SUM(output), SUM(reasoning), SUM(unclassified)"
-	query := `SELECT bucket, provider, model, tier, ` + sums + ` FROM (
-			SELECT bucket, provider, model, tier, ` + counterColumns + ` FROM usage_minute WHERE bucket >= ? AND bucket < ?
-			UNION ALL
-			SELECT bucket, provider, model, tier, ` + counterColumns + ` FROM usage_hour WHERE bucket >= ? AND bucket < ?
-		) GROUP BY bucket, provider, model, tier ORDER BY bucket`
-	args := []any{from.Unix(), to.Unix(), from.Truncate(time.Hour).Unix(), to.Unix()}
+	columns := "bucket, provider, model, tier, project, auth_index, " + counterColumns
+	query := `WITH rollups AS NOT MATERIALIZED (
+		SELECT ` + columns + ` FROM usage_minute WHERE bucket >= ? AND bucket < ?
+		UNION ALL
+		SELECT ` + columns + ` FROM usage_hour WHERE bucket >= ? AND bucket < ?
+	) SELECT bucket, provider, model, tier, '', '', 0, ` + sums + `
+		FROM rollups GROUP BY bucket, provider, model, tier`
+	if breakdown {
+		query += ` UNION ALL SELECT 0, provider, model, tier, project, auth_index, 1, ` + sums + `
+			FROM rollups GROUP BY provider, model, tier, project, auth_index`
+	}
+	// Compacted usage belongs to the bucket containing its hour start. A row
+	// whose hour starts before from was already excluded by chart bucketing.
+	args := []any{from.Unix(), to.Unix(), from.Unix(), to.Unix()}
 	rows, errQuery := s.db.QueryContext(ctx, query, args...)
 	if errQuery != nil {
 		return nil, fmt.Errorf("query usage history: %w", errQuery)
@@ -375,7 +374,7 @@ func (s *Store) queryRows(ctx context.Context, from, to time.Time) ([]Row, error
 	for rows.Next() {
 		var r Row
 		var bucket int64
-		if errScan := rows.Scan(&bucket, &r.Provider, &r.Model, &r.Tier,
+		if errScan := rows.Scan(&bucket, &r.Provider, &r.Model, &r.Tier, &r.Project, &r.AuthIndex, &r.Summary,
 			&r.Requests, &r.Failed, &r.UncachedInput, &r.CacheRead, &r.CacheWrite, &r.Output, &r.Reasoning, &r.Unclassified); errScan != nil {
 			return nil, fmt.Errorf("scan usage history: %w", errScan)
 		}

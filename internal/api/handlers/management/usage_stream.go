@@ -105,6 +105,9 @@ func usageStreamHistoryQuery(query url.Values, now time.Time) (url.Values, error
 		loc = loaded
 	}
 	result := url.Values{"granularity": {granularity}, "tz": {loc.String()}}
+	if query.Get("breakdown") == "true" {
+		result.Set("breakdown", "true")
+	}
 	if raw := query.Get("buckets"); raw != "" {
 		count, errCount := strconv.Atoi(raw)
 		if errCount != nil || count < 1 || count > 1000 {

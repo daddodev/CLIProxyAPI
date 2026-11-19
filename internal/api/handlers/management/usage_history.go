@@ -76,6 +76,7 @@ func (h *Handler) usageHistorySnapshot(ctx context.Context, query url.Values, no
 		From:        from,
 		To:          to,
 		Location:    loc,
+		Breakdown:   query.Get("breakdown") == "true",
 	}, rates)
 	if errHistory != nil {
 		if errors.Is(errHistory, usagehistory.ErrInvalidQuery) {

@@ -462,6 +462,14 @@ body.is-dragging * { cursor: grabbing !important }
 .tbl tfoot td { border-top: 1px solid var(--line-2); border-bottom: 0; font-weight: 650 }
 .tbl .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums }
 .tbl .rank { width: 1%; color: var(--faint); font: 11.5px var(--mono) }
+#breakdown-ctl { flex-wrap: wrap }
+#breakdown tbody th { text-transform: none; letter-spacing: normal; font: inherit; font-weight: 650; color: var(--text); white-space: normal; overflow-wrap: anywhere }
+#breakdown .breakdown-share { --c: var(--focus) }
+@media (max-width: 600px) {
+    #breakdown .breakdown-project { min-width: 86px }
+    #breakdown .breakdown-account { min-width: 124px; max-width: 152px; white-space: normal; overflow-wrap: anywhere }
+    #breakdown .breakdown-account .prov-tag { display: block; margin-top: 2px }
+}
 .tbl tr.is-hidden td { opacity: 0.42 }
 .m-name { display: flex; align-items: center; gap: 9px; font-weight: 560 }
 .m-name i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none }
@@ -550,6 +558,20 @@ dialog input:focus-visible { outline-offset: 0 }
         </div>
         <div id="history-notice"></div>
         <div class="tiles" id="tiles"></div>
+
+        <article class="panel" aria-labelledby="breakdown-title">
+            <div class="panel-head">
+                <h3 class="panel-title" id="breakdown-title">Usage breakdown</h3>
+                <fieldset class="seg-ctl" id="breakdown-ctl">
+                    <legend>Group usage by</legend>
+                    <label><input type="radio" name="breakdown" value="projects" checked><span>Project</span></label>
+                    <label><input type="radio" name="breakdown" value="accounts"><span>Account</span></label>
+                    <label><input type="radio" name="breakdown" value="project_accounts"><span>Project + account</span></label>
+                </fieldset>
+            </div>
+            <div class="tbl-wrap" id="breakdown" role="region" aria-labelledby="breakdown-title" tabindex="0"></div>
+        </article>
+
         <div class="legend" id="legend" role="group" aria-label="Show or hide models"></div>
 
         <article class="panel" aria-labelledby="tok-title">
@@ -995,7 +1017,7 @@ function startLive() {
         return
     }
     $("#activity").classList.toggle("loading", state.historyFor !== range)
-    const qs = new URLSearchParams({ granularity: RANGES[range].gran, buckets: RANGES[range].n, tz: TZ })
+    const qs = new URLSearchParams({ granularity: RANGES[range].gran, buckets: RANGES[range].n, tz: TZ, breakdown: "true" })
     ;(async () => {
         try {
             const res = await fetch(`${API}/stream?${qs}`, {
@@ -1045,7 +1067,7 @@ async function loadHistory() {
     const range = state.prefs.range
     const seq = ++historySeq
     const { from, to } = historyRange(range)
-    const qs = new URLSearchParams({ granularity: RANGES[range].gran, from, to, tz: TZ })
+    const qs = new URLSearchParams({ granularity: RANGES[range].gran, from, to, tz: TZ, breakdown: "true" })
     $("#activity").classList.toggle("loading", state.historyFor !== range)
     try {
         const h = await api(`${API}/history?${qs}`)
@@ -2427,11 +2449,50 @@ function rangeDesc(range, from) {
     return `since ${since} · ${GRAN_UNIT[gran]}`
 }
 
+function breakdownHtml(history, mode, providers) {
+    const rows = history.breakdown?.[mode]
+    if (!rows) return `<p class="muted">Usage breakdown is unavailable.</p>`
+    if (!rows.length) return `<p class="muted">No usage in this range.</p>`
+    const showProject = mode !== "accounts"
+    const showAccount = mode !== "projects"
+    const labels = new Map(providers.map((p) => [p.provider, p]))
+    const accountNames = new Map(providers.flatMap((p) => (p.accounts || []).map((a) => [a.auth_index, a.label])))
+    const usg = history.totals || {}
+    const cost = (r) => {
+        if (!r.cost_breakdown) return `<span class="unpriced">Unpriced</span>`
+        return `${esc(fmtUsd(r.cost_usd || 0))}${r.priced === false ? ` <span class="unpriced" title="Some usage has no price and is excluded">partial</span>` : ""}`
+    }
+    const metrics = (r) => `<td class="num">${esc(nf.format(r.requests || 0))}</td><td class="num">${esc(nf.format(r.failed_requests || 0))}</td><td class="num" title="${esc(nf.format(r.total_tokens || 0))} tokens">${esc(fmtTok(r.total_tokens || 0))}</td>`
+    return `<table class="tbl" data-key="breakdown-${mode}">
+        <thead><tr>${showProject ? '<th scope="col">Project</th>' : ""}${showAccount ? '<th scope="col">Upstream account</th>' : ""}<th class="num" scope="col">Requests</th><th class="num" scope="col">Failed</th><th class="num" scope="col">Tokens</th><th scope="col">Token share</th><th class="num" scope="col">Est. API cost</th></tr></thead>
+        <tbody>${rows.map((r) => {
+            const provider = labels.get(r.provider)?.label || r.provider || "Unknown provider"
+            const account = r.auth_index ? accountNames.get(r.auth_index) || r.auth_index : "Unknown account"
+            const accountCell = `<span title="${esc(r.auth_index || "No upstream account was recorded")}">${esc(account)}</span> <span class="prov-tag">${esc(provider)}</span>`
+            const projectCell = r.project ? esc(r.project) : '<span class="muted">Unassigned</span>'
+            const share = usg.total_tokens ? (r.total_tokens || 0) / usg.total_tokens : 0
+            const projectCol = showProject ? `<th scope="row" class="breakdown-project">${projectCell}</th>` : ""
+            const accountCol = !showAccount ? "" : showProject ? `<td class="breakdown-account">${accountCell}</td>` : `<th scope="row" class="breakdown-account">${accountCell}</th>`
+            return `<tr data-key="${esc(JSON.stringify([r.project, r.provider, r.auth_index]))}">${projectCol}${accountCol}${metrics(r)}<td><div class="share breakdown-share"><div class="share-bar" aria-hidden="true"><i style="width:${round(share * 100, 2)}%"></i></div><span>${esc(pctFmt.format(share))}</span></div></td><td class="num">${cost(r)}</td></tr>`
+        }).join("")}</tbody>
+        <tfoot><tr><td colspan="${showProject && showAccount ? 2 : 1}">All usage</td>${metrics(usg)}<td></td><td class="num">${cost({ ...usg, cost_breakdown: rows.some((r) => r.cost_breakdown) ? usg.cost_breakdown : null })}</td></tr></tfoot>
+    </table>`
+}
+
+function renderBreakdown() {
+    const mode = $('input[name="breakdown"]:checked')?.value || "projects"
+    patch($("#breakdown"), state.history ? breakdownHtml(state.history, mode, state.limits?.providers || [])
+        : `<p class="muted">${state.historyErr ? "Usage breakdown could not be loaded." : "Loading usage breakdown…"}</p>`)
+}
+
+$("#breakdown-ctl").addEventListener("change", renderBreakdown)
+
 function renderActivity() {
     const h = state.history
     const range = state.prefs.range
     $("#range-desc").textContent = rangeDesc(range, h && state.historyFor === range ? h.from : historyRange(range).from)
     patch($("#history-notice"), state.historyErr ? `<div class="notice${h ? "" : " bad"}">${h ? `Couldn't refresh activity: ${esc(state.historyErr)}. Showing the last data.` : `Couldn't load activity: ${esc(state.historyErr)}`}</div>` : "")
+    renderBreakdown()
     if (!h) {
         patch($("#tiles"), [0, 1, 2, 3].map((i) => `<div class="tile" data-key="sk${i}"><div class="sk" style="height:11px;width:50%"></div><div class="sk" style="height:30px;margin:10px 0 8px;width:70%"></div><div class="sk" style="height:11px;width:60%"></div></div>`).join(""))
         patch($("#legend"), "")
@@ -2688,6 +2749,28 @@ function sumSeries(list, base) {
     return o
 }
 
+function demoBreakdown(all) {
+    const projects = ["Web app", "Release jobs", "Research", ""]
+    const accounts = { claude: ["cl-7f3a", "cl-91c0"], codex: ["cx-02be"] }
+    const attributed = all.map((s, i) => ({ ...s, project: projects[i % projects.length], auth_index: accounts[s.provider]?.[i % (accounts[s.provider]?.length || 1)] }))
+    const groupBy = (fields) => {
+        const groups = new Map()
+        for (const s of attributed) {
+            const key = JSON.stringify(fields.map((f) => s[f]))
+            if (!groups.has(key)) groups.set(key, [])
+            groups.get(key).push(s)
+        }
+        return [...groups.values()].map((list) => {
+            const base = Object.fromEntries(fields.map((f) => [f, list[0][f]]))
+            const priced = list.filter((s) => s.priced)
+            const sum = sumSeries(list, base)
+            sum.cost_breakdown = priced.length ? sumSeries(priced, {}).cost_breakdown : null
+            return sum
+        }).sort((a, b) => b.total_tokens - a.total_tokens)
+    }
+    return { projects: groupBy(["project"]), accounts: groupBy(["provider", "auth_index"]), project_accounts: groupBy(["project", "provider", "auth_index"]) }
+}
+
 function demoHistory(gran, from) {
     const now = new Date()
     let start = new Date(from)
@@ -2721,8 +2804,8 @@ function demoHistory(gran, from) {
     const totals = sumSeries(all.filter((s) => s.priced), {})
     const unpricedAll = all.filter((s) => !s.priced)
     for (const f of SUM_FIELDS) if (f !== "cost_usd") totals[f] += unpricedAll.reduce((a, s) => a + (s[f] || 0), 0)
-    delete totals.priced
-    return { granularity: gran, tz: TZ, from, to: now.toISOString(), pricing: { status: "fresh", updated_at: new Date(+now - 2 * HOUR).toISOString() }, buckets, totals, models }
+    totals.priced = !unpricedAll.length
+    return { granularity: gran, tz: TZ, from, to: now.toISOString(), pricing: { status: "fresh", updated_at: new Date(+now - 2 * HOUR).toISOString() }, buckets, totals, models, breakdown: demoBreakdown(all) }
 }
 
 let demo = null

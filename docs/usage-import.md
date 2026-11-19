@@ -17,8 +17,10 @@ Run the same command without `--dry-run` to import:
 ```
 
 From a source checkout, replace `./cli-proxy-api` with `go run ./cmd/server`.
-An existing server can keep running while you import. Refresh `/usage.html`
-afterward and select a date range that includes the imported records.
+A server running the same version as the importer can stay running during an
+import. Stop an older server before importing with a newer binary, since the
+import can migrate the history database. Refresh `/usage.html` afterward and
+select a date range that includes the imported records.
 
 ## Transcript locations
 

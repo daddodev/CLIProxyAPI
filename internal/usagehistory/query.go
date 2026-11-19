@@ -27,6 +27,7 @@ type HistoryQuery struct {
 	From        time.Time
 	To          time.Time
 	Location    *time.Location
+	Breakdown   bool
 }
 
 // UsageEntry is one aggregated provider/model series value.
@@ -99,6 +100,7 @@ type HistoryResult struct {
 	Buckets     []Bucket      `json:"buckets"`
 	Totals      *UsageEntry   `json:"totals"`
 	Models      []*UsageEntry `json:"models"`
+	Breakdown   *Breakdown    `json:"breakdown,omitempty"`
 }
 
 // bucketStart returns the start of the bucket containing t. Minute and hour
@@ -112,11 +114,27 @@ func bucketStart(t time.Time, granularity string, loc *time.Location) time.Time 
 		return t.Truncate(time.Hour).In(loc)
 	case GranularityDay:
 		l := t.In(loc)
-		return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, loc)
+		return calendarMidnight(l.Year(), l.Month(), l.Day(), loc)
 	default:
 		l := t.In(loc)
-		return time.Date(l.Year(), l.Month(), 1, 0, 0, 0, 0, loc)
+		return calendarMidnight(l.Year(), l.Month(), 1, loc)
 	}
+}
+
+func calendarMidnight(year int, month time.Month, day int, loc *time.Location) time.Time {
+	// Normalize out-of-range dates before comparing their calendar fields.
+	civil := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	year, month, day = civil.Date()
+	t := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	if y, m, d := t.Date(); time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Before(civil) {
+		// When midnight is skipped, time.Date can resolve to the previous
+		// evening. Start at the transition instead.
+		_, end := t.ZoneBounds()
+		if !end.IsZero() {
+			return end.In(loc)
+		}
+	}
+	return t
 }
 
 func nextBucket(t time.Time, granularity string) time.Time {
@@ -126,9 +144,13 @@ func nextBucket(t time.Time, granularity string) time.Time {
 	case GranularityHour:
 		return t.Add(time.Hour)
 	case GranularityDay:
-		return t.AddDate(0, 0, 1)
+		// Advance the calendar date, not the wall-clock hour. A DST change
+		// at midnight can push one day's start to 01:00.
+		y, m, d := t.Date()
+		return calendarMidnight(y, m, d+1, t.Location())
 	default:
-		return t.AddDate(0, 1, 0)
+		y, m, _ := t.Date()
+		return calendarMidnight(y, m+1, 1, t.Location())
 	}
 }
 
@@ -159,33 +181,39 @@ func (s *Store) History(ctx context.Context, q HistoryQuery, rates RateTable) (*
 	}
 	end := nextBucket(starts[len(starts)-1], q.Granularity)
 
-	rows, errRows := s.queryRows(ctx, first.UTC(), end.UTC())
+	rows, errRows := s.queryRows(ctx, first.UTC(), end.UTC(), q.Breakdown)
 	if errRows != nil {
 		return nil, errRows
 	}
 
 	type seriesKey struct{ provider, model string }
-	index := make(map[int64]int, len(starts))
 	buckets := make([]Bucket, len(starts))
 	bucketSeries := make([]map[seriesKey]*UsageEntry, len(starts))
 	for i, start := range starts {
-		index[start.Unix()] = i
 		buckets[i] = Bucket{Start: start, Series: []*UsageEntry{}}
 		bucketSeries[i] = make(map[seriesKey]*UsageEntry)
 	}
 	totals := &UsageEntry{}
 	models := make(map[seriesKey]*UsageEntry)
+	var attribution *attributionTotals
+	if q.Breakdown {
+		attribution = newAttributionTotals()
+	}
 
 	for _, row := range rows {
-		i, ok := index[bucketStart(row.Bucket, q.Granularity, q.Location).Unix()]
-		if !ok {
-			continue
-		}
 		var cost CostBreakdown
 		priced := false
 		if rates != nil {
 			cost, priced = rates.Cost(row.Model, row.Tier, row.Counters)
 		}
+		if row.Summary {
+			attribution.add(row, cost, priced)
+			continue
+		}
+		// Use the same [start, end) intervals as the summary query. In a
+		// zone that skips midnight, reconstructing midnight from a row's
+		// date can give a different result than advancing the calendar.
+		i := sort.Search(len(starts), func(i int) bool { return starts[i].After(row.Bucket) }) - 1
 		key := seriesKey{row.Provider, row.Model}
 		entry := bucketSeries[i][key]
 		if entry == nil {
@@ -231,7 +259,7 @@ func (s *Store) History(ctx context.Context, q HistoryQuery, rates RateTable) (*
 		totals.CostBreakdown = &CostBreakdown{}
 	}
 
-	return &HistoryResult{
+	result := &HistoryResult{
 		Granularity: q.Granularity,
 		TZ:          q.Location.String(),
 		From:        first,
@@ -239,5 +267,9 @@ func (s *Store) History(ctx context.Context, q HistoryQuery, rates RateTable) (*
 		Buckets:     buckets,
 		Totals:      totals,
 		Models:      modelList,
-	}, nil
+	}
+	if attribution != nil {
+		result.Breakdown = attribution.finish()
+	}
+	return result, nil
 }

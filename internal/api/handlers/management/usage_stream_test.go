@@ -15,6 +15,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestUsageStreamKeepsBreakdownOptIn(t *testing.T) {
+	for _, value := range []string{"", "true"} {
+		query, errQuery := usageStreamHistoryQuery(url.Values{"granularity": {"hour"}, "buckets": {"48"}, "breakdown": {value}}, time.Now())
+		if errQuery != nil || query.Get("breakdown") != value {
+			t.Fatalf("breakdown %q: query %v, error %v", value, query, errQuery)
+		}
+	}
+}
+
 func TestStreamUsagePushesPassiveObservations(t *testing.T) {
 	auth := claudeTestAuth("stream", "stream@example.com")
 	auth.Quota.ObserveResponseHeadersForProvider("claude", http.Header{

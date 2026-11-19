@@ -513,6 +513,8 @@ type UsageHistoryConfig struct {
 	Disabled bool `yaml:"disabled" json:"disabled"`
 	// Path is the SQLite database file. Defaults to usage-history.db inside the auth directory.
 	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+	// Projects maps SHA-256 fingerprints of incoming proxy API keys to project names.
+	Projects map[string]string `yaml:"projects,omitempty" json:"projects,omitempty"`
 }
 
 // RemoteManagement holds management API configuration under 'remote-management'.

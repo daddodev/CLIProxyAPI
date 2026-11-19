@@ -118,7 +118,7 @@ func TestImportBoundaryAndLegacyPreview(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	boundary := time.Date(2020, 1, 2, 12, 0, 0, 0, time.UTC)
-	store.add(boundary, "claude", "m", "live-account", TierStandard, Counters{Requests: 1, Output: 7})
+	store.add(boundary, "claude", "m", "live-account", TierStandard, "", Counters{Requests: 1, Output: 7})
 	if errFlush := store.flush(); errFlush != nil {
 		t.Fatal(errFlush)
 	}

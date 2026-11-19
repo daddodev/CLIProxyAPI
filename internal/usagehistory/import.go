@@ -284,8 +284,8 @@ func importBatch(ctx context.Context, db *sql.DB, records []importRecord, dryRun
 				table, resolution = "usage_hour", time.Hour
 			}
 			c := record.counters
-			if _, errWrite := tx.ExecContext(ctx, `INSERT INTO `+table+` (bucket, provider, model, auth_index, tier, `+counterColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`+upsertSuffix,
+			if _, errWrite := tx.ExecContext(ctx, `INSERT INTO `+table+` (bucket, provider, model, auth_index, tier, project, `+counterColumns+`)
+				VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)`+upsertSuffix,
 				record.at.UTC().Truncate(resolution).Unix(), record.provider, record.model, importedAuthIndex, record.tier,
 				c.Requests, c.Failed, c.UncachedInput, c.CacheRead, c.CacheWrite, c.Output, c.Reasoning, c.Unclassified); errWrite != nil {
 				return errWrite

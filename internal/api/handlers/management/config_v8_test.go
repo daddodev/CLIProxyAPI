@@ -382,6 +382,36 @@ func TestV8GroupedCredentialsSurviveLegacyWrites(t *testing.T) {
 	}
 }
 
+func TestConfigV8SaveProjectNamesWithoutChangingClientKeys(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "config.yaml")
+	if errWrite := os.WriteFile(file, []byte("config-version: 8\naccess: {api-keys: [fixture-a, fixture-b]}\n"), 0600); errWrite != nil {
+		t.Fatal(errWrite)
+	}
+	cfg, errLoad := config.LoadConfig(file)
+	if errLoad != nil {
+		t.Fatal(errLoad)
+	}
+	h := &Handler{cfg: cfg, configFilePath: file}
+	router := gin.New()
+	router.PATCH("/v8/management/config", h.ConfigV8)
+	router.DELETE("/v8/management/config/*path", h.ConfigV8)
+	const fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const body = `{"observability":{"usage":{"history":{"projects":{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":"Project A"}}}}}`
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/v8/management/config", strings.NewReader(body)))
+	if w.Code != http.StatusOK || h.cfg.UsageHistory.Projects[fingerprint] != "Project A" {
+		t.Fatalf("project save: status=%d body=%s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/v8/management/config/observability/usage/history/projects/"+fingerprint, nil))
+	if w.Code != http.StatusOK || len(h.cfg.UsageHistory.Projects) != 0 {
+		t.Fatalf("project delete: status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !reflect.DeepEqual(h.cfg.APIKeys, []string{"fixture-a", "fixture-b"}) {
+		t.Fatal("saving project labels changed the client keys")
+	}
+}
+
 func TestConfigV8DeleteLastField(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

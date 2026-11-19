@@ -44,11 +44,11 @@ func approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 func TestHistoryAggregatesMinuteRowsIntoHourBuckets(t *testing.T) {
 	store := openTestStore(t)
 	base := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
-	store.add(base.Add(5*time.Minute), "claude", "claude-opus-4-5", "a1", TierStandard,
+	store.add(base.Add(5*time.Minute), "claude", "claude-opus-4-5", "a1", TierStandard, "",
 		Counters{Requests: 1, UncachedInput: 1000, CacheRead: 10000, CacheWrite: 2000, Output: 500, Reasoning: 100})
-	store.add(base.Add(50*time.Minute), "claude", "claude-opus-4-5", "a2", TierFast,
+	store.add(base.Add(50*time.Minute), "claude", "claude-opus-4-5", "a2", TierFast, "",
 		Counters{Requests: 1, UncachedInput: 1000, Output: 500})
-	store.add(base.Add(70*time.Minute), "codex", "mystery-model", "c1", TierStandard,
+	store.add(base.Add(70*time.Minute), "codex", "mystery-model", "c1", TierStandard, "",
 		Counters{Requests: 2, Failed: 1, UncachedInput: 300, Output: 200})
 
 	result, errHistory := store.History(context.Background(), HistoryQuery{
@@ -91,7 +91,7 @@ func TestHistoryAggregatesMinuteRowsIntoHourBuckets(t *testing.T) {
 func TestHistoryIncludesEmptyBuckets(t *testing.T) {
 	base := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	store := openTestStoreWithClock(t, func() time.Time { return base })
-	store.add(base, "claude", "claude-opus-4-5", "a1", TierStandard, Counters{Requests: 1, Output: 10})
+	store.add(base, "claude", "claude-opus-4-5", "a1", TierStandard, "", Counters{Requests: 1, Output: 10})
 
 	result, errHistory := store.History(context.Background(), HistoryQuery{
 		Granularity: GranularityMinute,
@@ -118,7 +118,7 @@ func TestHistoryDayBucketsUseLocation(t *testing.T) {
 		t.Fatalf("load location: %v", errLoad)
 	}
 	// 23:30 UTC on Oct 24 is 01:30 on Oct 25 in Rome (UTC+2 before the DST switch).
-	store.add(time.Date(2026, 10, 24, 23, 30, 0, 0, time.UTC), "claude", "m", "a", TierStandard, Counters{Requests: 1})
+	store.add(time.Date(2026, 10, 24, 23, 30, 0, 0, time.UTC), "claude", "m", "a", TierStandard, "", Counters{Requests: 1})
 
 	result, errHistory := store.History(context.Background(), HistoryQuery{
 		Granularity: GranularityDay,
@@ -140,8 +140,8 @@ func TestHistoryDayBucketsUseLocation(t *testing.T) {
 func TestCompactionKeepsTotals(t *testing.T) {
 	old := time.Date(2026, 10, 1, 10, 15, 0, 0, time.UTC)
 	store := openTestStoreWithClock(t, func() time.Time { return old.Add(30 * 24 * time.Hour) })
-	store.add(old, "claude", "claude-opus-4-5", "a1", TierStandard, Counters{Requests: 1, Output: 100})
-	store.add(old.Add(20*time.Minute), "claude", "claude-opus-4-5", "a1", TierStandard, Counters{Requests: 1, Output: 50})
+	store.add(old, "claude", "claude-opus-4-5", "a1", TierStandard, "", Counters{Requests: 1, Output: 100})
+	store.add(old.Add(20*time.Minute), "claude", "claude-opus-4-5", "a1", TierStandard, "", Counters{Requests: 1, Output: 50})
 	store.flush()
 
 	store.compact()
@@ -280,7 +280,7 @@ func TestHistoryDayBucketsInHalfHourZone(t *testing.T) {
 	// starts before local midnight.
 	at := time.Date(2026, 10, 25, 0, 10, 0, 0, kolkata)
 	store := openTestStoreWithClock(t, func() time.Time { return at.Add(time.Hour) })
-	store.add(at, "claude", "m", "a", TierStandard, Counters{Requests: 1, Output: 7})
+	store.add(at, "claude", "m", "a", TierStandard, "", Counters{Requests: 1, Output: 7})
 
 	result, errHistory := store.History(context.Background(), HistoryQuery{
 		Granularity: GranularityDay,
@@ -304,7 +304,7 @@ func TestCloseReportsUnwrittenFinalFlush(t *testing.T) {
 	if _, errDrop := store.db.Exec(`DROP TABLE usage_minute`); errDrop != nil {
 		t.Fatalf("drop table: %v", errDrop)
 	}
-	store.add(time.Now(), "claude", "m", "a", TierStandard, Counters{Requests: 1})
+	store.add(time.Now(), "claude", "m", "a", TierStandard, "", Counters{Requests: 1})
 	if errClose := store.Close(); errClose == nil {
 		t.Fatal("Close must report buffered usage that could not be written")
 	}

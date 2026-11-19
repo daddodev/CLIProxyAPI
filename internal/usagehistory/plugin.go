@@ -2,6 +2,8 @@ package usagehistory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +23,7 @@ var (
 	currentMu sync.RWMutex
 	current   *Store
 	pricing   *Pricing
+	projects  map[[sha256.Size]byte]string
 	// started is set by Start so config reloads outside a running service
 	// (for example in tests) never create a database.
 	started bool
@@ -67,7 +70,11 @@ func (plugin) HandleUsage(_ context.Context, record coreusage.Record) {
 	if record.Failed {
 		counters.Failed = 1
 	}
-	store.add(at, provider, model, strings.TrimSpace(record.AuthIndex), normalizeTier(record), counters)
+	project := ""
+	if key := strings.TrimSpace(record.APIKey); key != "" && len(projects) > 0 {
+		project = projects[sha256.Sum256([]byte(key))]
+	}
+	store.add(at, provider, model, strings.TrimSpace(record.AuthIndex), normalizeTier(record), project, counters)
 	usageupdates.Notify()
 }
 
@@ -149,6 +156,7 @@ func Configure(cfg *config.Config) {
 	if !started {
 		return
 	}
+	projects = projectLabels(cfg.UsageHistory.Projects)
 	if current != nil && current.Path() == path {
 		pricing.SetProxyURL(cfg.ProxyURL)
 		return
@@ -181,6 +189,7 @@ func Shutdown() {
 	currentMu.Lock()
 	defer currentMu.Unlock()
 	started = false
+	projects = nil
 	if current != nil {
 		if errClose := current.Close(); errClose != nil {
 			log.WithError(errClose).Warn("usage history: close database")
@@ -191,4 +200,23 @@ func Shutdown() {
 		pricing.Stop()
 		pricing = nil
 	}
+}
+
+func projectLabels(configured map[string]string) map[[sha256.Size]byte]string {
+	labels := make(map[[sha256.Size]byte]string, len(configured))
+	for fingerprint, label := range configured {
+		var digest [sha256.Size]byte
+		label = strings.TrimSpace(label)
+		if len(fingerprint) != hex.EncodedLen(len(digest)) || label == "" {
+			log.Warn("usage history: ignoring project mapping with an invalid SHA-256 fingerprint or empty name")
+			continue
+		}
+		// Require the canonical lowercase representation so entries cannot alias.
+		if _, errDecode := hex.Decode(digest[:], []byte(fingerprint)); errDecode != nil || hex.EncodeToString(digest[:]) != fingerprint {
+			log.Warn("usage history: ignoring project mapping with an invalid SHA-256 fingerprint")
+			continue
+		}
+		labels[digest] = label
+	}
+	return labels
 }

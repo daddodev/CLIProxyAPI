@@ -11,6 +11,25 @@ function section(start, end) {
     return html.slice(from, to)
 }
 
+test("usage breakdown switches dimensions, escapes labels, and marks partial costs", () => {
+    const context = vm.createContext({
+        nf: new Intl.NumberFormat("en"), pctFmt: new Intl.NumberFormat("en", { style: "percent" }),
+        fmtTok: String, fmtUsd: (n) => `$${n.toFixed(2)}`, round: Math.round,
+    })
+    vm.runInContext(section("const $ =", "const round =") + section("function breakdownHtml", "function renderBreakdown"), context)
+    const row = { project: "<Website>", auth_index: "account-1", provider: "claude", requests: 2, failed_requests: 1, total_tokens: 40, cost_usd: 1.2, cost_breakdown: {}, priced: false }
+    const history = { totals: row, breakdown: { projects: [row], accounts: [row], project_accounts: [row] } }
+    const providers = [{ provider: "claude", label: "Claude", accounts: [{ auth_index: "account-1", label: "<Personal>" }] }]
+    const render = (mode) => context.breakdownHtml(history, mode, providers)
+    assert.match(render("projects"), /&lt;Website&gt;/)
+    assert.doesNotMatch(render("projects"), /Upstream account/)
+    assert.match(render("accounts"), /&lt;Personal&gt;/)
+    assert.doesNotMatch(render("accounts"), /<th scope="col">Project/)
+    assert.match(render("project_accounts"), /&lt;Website&gt;.*&lt;Personal&gt;.*\$1.20.*partial/)
+    const unknown = context.breakdownHtml({ breakdown: { project_accounts: [{}] } }, "project_accounts", [])
+    assert.match(unknown, /Unassigned.*Unknown account.*Unpriced/)
+})
+
 // Exercise the embedded page's reset flow without a DOM or third-party runner.
 const resetScript = [
     section("const $ =", "const round ="),

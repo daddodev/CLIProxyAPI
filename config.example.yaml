@@ -1313,6 +1313,11 @@ observability:
       disabled: false
       # Defaults to usage-history.db inside auth-dir.
       # path: "/path/to/usage-history.db"
+      # Give each project its own client key in access.api-keys, then map the
+      # lowercase SHA-256 fingerprint of each key to a project name:
+      # projects:
+      #   "<64-character SHA-256 fingerprint>": "my-project"
+      # See docs/usage-attribution.md for setup and migration details.
 
   # Enable pprof HTTP debug server (host:port). Keep it bound to localhost for safety.
   pprof:
