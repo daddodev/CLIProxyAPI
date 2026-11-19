@@ -1179,12 +1179,30 @@ function arcPath(cx, cy, r, a0, a1) {
     return `M${round(x0, 2)} ${round(y0, 2)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${round(x1, 2)} ${round(y1, 2)}`
 }
 
+function routingAvailability(a, now = Date.now()) {
+    if (a.disabled || a.status === "disabled") return { blocked: true, until: null }
+    const gates = (a.windows || []).filter((w) =>
+        (w.kind === "five_hour" || w.kind === "weekly") && leftOf(w) <= reserveOf(a, w)
+    ).map((w) => w.resets_at)
+    if (a.status === "cooldown") gates.push(a.cooldown_until)
+    if (!gates.length) return { blocked: false, until: null }
+    const times = gates.map((date) => date ? Date.parse(date) : NaN)
+    return { blocked: true, until: times.every((time) => time > now) ? new Date(Math.max(...times)).toISOString() : null }
+}
+
 function gaugeHtml(p, w, rows) {
     // Accounts stack end to end in reverse routing order, so the account used
     // first sits next to the empty stretch and the dial drains like a fuel gauge.
     const enabled = rows.filter((r) => !r.a.disabled)
     const slots = enabled.map((r) => ({ ...r, w: acctWin(r.a, w) })).filter((s) => s.w).reverse()
-        .map((s) => ({ ...s, left: leftOf(s.w), reserve: reserveOf(s.a, s.w) }))
+        .map((s) => {
+            const availability = routingAvailability(s.a)
+            const reserve = reserveOf(s.a, s.w)
+            const left = leftOf(s.w)
+            // Show the five-hour reserve itself, but do not count quota that
+            // routing cannot use because another window or cooldown blocks it.
+            return { ...s, left: w.kind === "five_hour" && availability.blocked ? Math.min(left, reserve) : left, reserve, availability }
+        })
     const n = Math.max(1, slots.length)
     const cap = n * 100
     const cx = 60, cy = 60, r = 47, sw = 10
@@ -1227,19 +1245,17 @@ function gaugeHtml(p, w, rows) {
     }
     const anyReserve = slots.some((s) => s.reserve > 0)
     const tone = usable <= 0 ? "full" : usable / cap < 0.15 ? "hot" : ""
-    const capText = `${anyReserve ? "usable" : "left"}${n > 1 ? ` of ${fmtPct(cap)}` : ""}`
+    const capText = `${anyReserve || w.kind === "five_hour" ? "usable" : "left"}${n > 1 ? ` of ${fmtPct(cap)}` : ""}`
     const reset = w.next_reset_at
     const note = slots.length < enabled.length ? `${slots.length} of ${enabled.length} reporting` : ""
-    // Once every account is out of usable quota, routing resumes when the first
-    // one comes back: at its cooldown end, or else when its window resets.
-    const exhausted = slots.length > 0 && slots.every((s) => s.left <= s.reserve)
-    const cool = exhausted ? slots.map((s) => ({ a: s.a, until: (s.a.status === "cooldown" && s.a.cooldown_until) || s.w.resets_at }))
-        .filter((c) => c.until && !Number.isNaN(new Date(c.until).getTime()))
-        .sort((x, y) => new Date(x.until) - new Date(y.until)).slice(0, 1) : []
-    const coolLine = (c) => `<div class="g-cool"><span class="chip chip-warn" title="${esc(c.a.label)} is usable again ${esc(absTime(c.until))}">Cooldown <span data-rel="${esc(c.until)}">${esc(relTime(c.until))}</span></span></div>`
+    const availability = enabled.map(({ a }) => ({ a, ...routingAvailability(a) }))
+    const exhausted = slots.length > 0 && usable <= 0 && availability.every((a) => a.blocked)
+    const cool = exhausted ? availability.filter((a) => a.until)
+        .sort((x, y) => Date.parse(x.until) - Date.parse(y.until)).slice(0, 1) : []
+    const coolLine = (c) => `<div class="g-cool"><span class="chip chip-warn" title="${esc(c.a.label)} is expected to be usable again ${esc(absTime(c.until))}">Usable <span data-rel="${esc(c.until)}">${esc(relTime(c.until))}</span></span></div>`
     // The cooldown replaces the reset line when both end together.
-    const merged = reset && cool.length && Math.abs(new Date(cool[0].until).getTime() - new Date(reset).getTime()) < 2 * MIN
-    const aria = `${p.label} ${w.label}: ${fmtPct(usable)} ${capText}${held > 0 ? `, plus ${fmtPct(held)} kept in reserve` : ""}${reset ? `, next reset ${relTime(reset)}` : ""}${cool.length ? `, cooldown ends ${relTime(cool[0].until)}` : ""}`
+    const merged = reset && cool.length && Date.parse(cool[0].until) === Date.parse(reset)
+    const aria = `${p.label} ${w.label}: ${fmtPct(usable)} ${capText}${held > 0 ? `, plus ${fmtPct(held)} kept in reserve` : ""}${reset ? `, next reset ${relTime(reset)}` : ""}${cool.length ? `, expected to be usable ${relTime(cool[0].until)}` : ""}`
     return `<div class="gauge" data-key="g-${esc(winKey(w))}">
         <div class="g-dial">
             <svg viewBox="0 0 120 106" role="img" aria-label="${esc(aria)}">${arcs}${marks}</svg>
@@ -1284,7 +1300,7 @@ function accountHtml(row, wins, single, cols, sharedError, ctx = {}) {
     const ed = state.edit
     if (active) chips.push(`<span class="chip chip-ok" title="Fill-first routing sends new requests here">In use</span>`)
     if (a.disabled || a.status === "disabled") chips.push(`<span class="chip">Disabled</span>`)
-    if (a.status === "cooldown") chips.push(`<span class="chip chip-warn"${a.cooldown_until ? ` title="Until ${esc(absTime(a.cooldown_until))}"` : ""}>Cooldown${a.cooldown_until ? ` <span data-rel="${esc(a.cooldown_until)}">${esc(relTime(a.cooldown_until))}</span>` : ""}</span>`)
+    if (a.status === "cooldown") chips.push(`<span class="chip chip-warn"${a.cooldown_until ? ` title="Until ${esc(absTime(a.cooldown_until))}"` : ""}>Cooling down${a.cooldown_until ? ` until <span>${esc(absShort(a.cooldown_until))}</span>` : ""}</span>`)
     if (a.limit_reached) chips.push(`<span class="chip chip-warn" title="Routing skips this account until a window resets">Reserve reached</span>`)
     // A single account's 5h and weekly windows are already on the dials.
     const cells = single ? [] : wins.map((w) => {

@@ -11,6 +11,21 @@ function section(start, end) {
     return html.slice(from, to)
 }
 
+test('routing waits for the last blocking window or cooldown, not the first', () => {
+    const ctx = vm.createContext({ leftOf: (w) => 100 - w.used_percent, reserveOf: (a, w) => a[w.kind] || 0 })
+    vm.runInContext(section('function routingAvailability', 'function gaugeHtml'), ctx)
+    const soon = '2026-11-19T20:10:00.000Z'
+    const later = '2026-11-23T18:00:00.000Z'
+    const now = Date.parse('2026-11-19T19:36:00Z')
+    const weekly = { kind: 'weekly', used_percent: 100, resets_at: later }
+    const five = { kind: 'five_hour', used_percent: 98, resets_at: soon }
+    assert.equal(ctx.routingAvailability({ windows: [weekly, { ...five, used_percent: 0 }] }, now).until, later)
+    assert.equal(ctx.routingAvailability({ windows: [weekly, five], five_hour: 10, status: 'cooldown', cooldown_until: soon }, now).until, later)
+    assert.equal(ctx.routingAvailability({ windows: [five], five_hour: 10 }, now).until, soon)
+    assert.equal(ctx.routingAvailability({ windows: [{ ...weekly, resets_at: null }, five], five_hour: 10 }, now).until, null)
+    assert.equal(ctx.routingAvailability({ windows: [five] }, now).blocked, false)
+})
+
 test("usage breakdown switches dimensions, escapes labels, and marks partial costs", () => {
     const context = vm.createContext({
         nf: new Intl.NumberFormat("en"), pctFmt: new Intl.NumberFormat("en", { style: "percent" }),
